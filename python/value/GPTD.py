@@ -73,7 +73,6 @@ class GPTD:
             et = et[0][0]
             
             delk_t_1 = k_t_1 - self.gamma*k_t
-            assert (delk_t_1==np.dot(K_t_1,h_t)), "Check delk_t_1"
 
             gt = np.dot(Q_t_1,np.dot(H_t_1,delk_t_1))
 
@@ -85,7 +84,6 @@ class GPTD:
                 D[:,-1] = xt[:,0]
                 self.D = D
                 print("Dictionary updated")
-
 
                 # Compute alphat and Ct
                 c_t = np.dot(H_t_1,gt) - at_1
@@ -107,7 +105,7 @@ class GPTD:
 
                 alpha_t = np.zeros(alpha_t_1.shape[0]+1,alpha_t_1.shape[1])
                 alpha_t[:-1,:] = alpha_t_1 + c_t/s_t*(np.dot(delk_t_1.T,alpha_t_1)-r)
-                alpha_t[-1,:] = self.gamma/st*(np.dot(delk_t_1.T,alpha_t_1)-r)
+                alpha_t[-1,:] = self.gamma/s_t*(np.dot(delk_t_1.T,alpha_t_1)-r)
                 
                 C_t = np.zeros(C_t_1.shape[0]+1,C_t_1.shape[1]+1)
                 C_t[:-1,:-1] = C_t_1 + 1/s_t*np.dot(c_t,c_t.T)
@@ -137,6 +135,7 @@ class GPTD:
                 # Compute alphat and Ct
 
                 h_t = at_1 - self.gamma*at
+                assert (delk_t_1==np.dot(K_t_1,h_t)), "Check delk_t_1"
                 ct = np.dot(H_t_1,gt) - h_t
                 st = self.sigma0**2 - np.dot(ct.T,delk_t_1)
                 
