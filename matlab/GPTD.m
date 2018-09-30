@@ -1,6 +1,6 @@
 classdef GPTD
 
-    properties (SetAccess='immutable')
+    properties (SetAccess='private')
         nu
         gamma_
         sigma0
@@ -34,7 +34,7 @@ classdef GPTD
         
         function k = kernel(gptd,x,y)
             % x,y are nx1 inputs that represent states
-            k = exp(sum((x-y).^2)/(2*gptd.sigmak^2));
+            k = exp(-sum((x-y).^2)/(2*gptd.sigmak^2));
         end
         
         function k_ = kernel_vector(gptd,x)
@@ -48,7 +48,7 @@ classdef GPTD
             k_ = gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))';
         end
         
-        function update(gptd, xt, xt_1, r)
+        function gptd = update(gptd, xt, xt_1, r)
             if (size(xt,1)==1)
                 xt=xt';
             end
@@ -65,7 +65,7 @@ classdef GPTD
                 At = eye(2);
                 H_t = [1,-gptd.gamma_];
                 Q_t = 1/(H_t*K_t*H_t' + gptd.sigma0^2);
-                alpha_t = H_t*Q_t*r;
+                alpha_t = H_t'*Q_t*r;
                 C_t = H_t'*Q_t*H_t;
             else
                 K_t_1 = gptd.K_;
@@ -88,7 +88,9 @@ classdef GPTD
                 
                 if (et > gptd.nu)
                     gptd.D(:,size(gptd.D,2)+1) = xt;
-                    c_t = H_t_1*gt - at_1;
+                    % Dimension issues
+                    c_t = H_t_1'*gt - at_1;
+                    %
                     delktt = at_1'*(delk_t_1 - gptd.gamma_*k_t_1) + gptd.gamma_^2*ktt;
                     s_t = gptd.sigma0^2 + delktt - delk_t_1'*C_t_1*delk_t_1;
 
@@ -130,9 +132,10 @@ classdef GPTD
                     H_t(1:size(H_t_1,1),1:size(H_t_1,2)) = H_t_1;
                     H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
                     H_t(size(H_t_1,1)+1,size(H_t_1,2)+1) = -gptd.gamma_;
+                    
                 else
                     h_t = at_1 - gptd.gamma_*at;
-                    ct = H_t_1*gt - h_t;
+                    ct = H_t_1'*gt - h_t;
                     st = gptd.sigma0^2 - ct'*delk_t_1;
 
                     K_t = K_t_1;
@@ -150,8 +153,8 @@ classdef GPTD
                     Q_t = Q_t/st;
 
                     At = zeros(size(At_1,1)+1,size(At_1,2));
-                    At(1:size(A_t_1,1),:) = At_1;
-                    At(size(A_t_1,1)+1,:) = at';
+                    At(1:size(At_1,1),:) = At_1;
+                    At(size(At_1,1)+1,:) = at';
 
                     H_t = zeros(size(H_t_1,1)+1,size(H_t_1,2));
                     H_t(1:size(H_t_1,1),:) = H_t_1;
@@ -166,6 +169,23 @@ classdef GPTD
             gptd.Q_ = Q_t;
             gptd.A = At;
             gptd.H_ = H_t;
+        end
+        
+        function visualize(gptd, grid_x, grid_x_dot)
+            if (size(grid_x,1)~=size(grid_x_dot,1) || size(grid_x,2)~=size(grid_x_dot,2))
+                disp('Check grid');
+            end
+            V = zeros(size(grid_x));
+            for i=1:1:size(grid_x,1)
+                for j=1:1:size(grid_x,2)
+                    V(i,j) = gptd.kernel_vector([grid_x(i,j);grid_x_dot(i,j)])'*gptd.alpha_;
+                end
+            end
+            figure;
+            imagesc(V);
+            xlabel('theta'); ylabel('theta-dot');
+            title('GPTD Value function');
+            colorbar;
         end
     
     end

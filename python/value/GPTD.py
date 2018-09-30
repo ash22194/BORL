@@ -50,7 +50,7 @@ class GPTD:
             At = np.eye(2)
             H_t = np.dot(np.array([[1,-self.gamma]]),self.A)
             Q_t = np.linalg.inv(np.dot(H_t,np.dot(K_t,H_t.T))+np.diag([self.sigma0**2]))
-            alpha_t = np.dot(H_t,Q_t)*r
+            alpha_t = np.dot(H_t.T,Q_t)*r
             C_t = np.dot(H_t.T,np.dot(Q_t,H_t))
 
         else:
@@ -86,7 +86,7 @@ class GPTD:
                 print("Dictionary updated")
 
                 # Compute alphat and Ct
-                c_t = np.dot(H_t_1,gt) - at_1
+                c_t = np.dot(H_t_1.T,gt) - at_1 # Added transpose... Mistake in the paper
                 delktt = np.dot(at_1.T,(delk_t_1 - self.gamma*k_t_1)) + self.gamma**2*ktt
                 s_t = self.sigma0**2 + delktt - np.dot(delk_t_1.T,np.dot(C_t_1,delk_t_1))
 
@@ -136,7 +136,7 @@ class GPTD:
 
                 h_t = at_1 - self.gamma*at
                 assert (delk_t_1==np.dot(K_t_1,h_t)), "Check delk_t_1"
-                ct = np.dot(H_t_1,gt) - h_t
+                ct = np.dot(H_t_1.T,gt) - h_t # Added transpose... Mistake in the paper
                 st = self.sigma0**2 - np.dot(ct.T,delk_t_1)
                 
                 K_t = K_t_1
