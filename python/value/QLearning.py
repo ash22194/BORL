@@ -20,7 +20,7 @@ class QLearningDiscrete:
         q_next = [self.q[s_][a_] for a_ in range(self.env.action_space.n)]
         self.q[s][a] += self.alpha*(r + self.gamma*np.max(q_next) - self.q[s][a]) 
     
-    def train(self, num_episodes, max_length_episode, test_every):
+    def train(self, num_episodes, max_length_episode, test_every, debug):
         for e in range(num_episodes):
             s = self.env.reset()
             is_terminal = False
@@ -31,7 +31,7 @@ class QLearningDiscrete:
                 s_, r, is_terminal, debug_info = self.env.step(a)
                 self.update(s,a,r,s_)
                 s = s_
-            if (e%test_every==0):
+            if ((e%test_every==0) and (debug)):
                 R_avg, total_success = self.test(10,max_length_episode)
                 print('Episode %d, Average Reward %f, Success : %d'%(e,R_avg,total_success))
                 
