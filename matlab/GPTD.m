@@ -1,6 +1,7 @@
 classdef GPTD
 
     properties (SetAccess='private')
+        env
         nu
         gamma_
         sigma0
@@ -13,11 +14,11 @@ classdef GPTD
         K_inv
         alpha_
         C_
-    
     end
     
     methods
-        function gptd = GPTD(nu, sigma0, sigmak, gamma_)
+        function gptd = GPTD(env, nu, sigma0, sigmak, gamma_)
+            gptd.env = env;
             gptd.nu = nu;
             gptd.sigma0 = sigma0;
             gptd.sigmak = sigmak;
@@ -48,7 +49,7 @@ classdef GPTD
             k_ = gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))';
         end
         
-        function gptd = update(gptd, xt, xt_1, r)
+        function gptd = update(gptd, xt, xt_1, r, gamma_)
             if (size(xt,1)==1)
                 xt=xt';
             end
@@ -63,7 +64,7 @@ classdef GPTD
                 K_t(:,2) = gptd.kernel_vector(xt);
                 K_t_inv = inv(K_t);
                 At = eye(2);
-                H_t = [1,-gptd.gamma_];
+                H_t = [1,-gamma_];
                 Q_t = 1/(H_t*K_t*H_t' + gptd.sigma0^2);
                 alpha_t = H_t'*Q_t*r;
                 C_t = H_t'*Q_t*H_t;
@@ -83,15 +84,18 @@ classdef GPTD
                 at = K_t_1_inv*k_t;
                 et = ktt - k_t'*at;
                 
-                delk_t_1 = k_t_1 - gptd.gamma_*k_t;
+                delk_t_1 = k_t_1 - gamma_*k_t;
                 gt = Q_t_1*H_t_1*delk_t_1;
                 
                 if (et > gptd.nu)
-                    gptd.D(:,size(gptd.D,2)+1) = xt;
+                    D = zeros(size(gptd.D,1),size(gptd.D,2)+1);
+                    D(:,1:size(gptd.D,2)) = gptd.D;
+                    D(:,size(gptd.D,2)+1) = xt;
+                    gptd.D = D;
                     % Dimension issues
                     c_t = H_t_1'*gt - at_1;
                     %
-                    delktt = at_1'*(delk_t_1 - gptd.gamma_*k_t_1) + gptd.gamma_^2*ktt;
+                    delktt = at_1'*(delk_t_1 - gamma_*k_t) + gamma_^2*ktt;
                     s_t = gptd.sigma0^2 + delktt - delk_t_1'*C_t_1*delk_t_1;
 
                     K_t = zeros(size(K_t_1,1)+1,size(K_t_1,2)+1);
@@ -109,13 +113,13 @@ classdef GPTD
 
                     alpha_t = zeros(size(alpha_t_1,1)+1,size(alpha_t_1,2));
                     alpha_t(1:size(alpha_t_1,1),:) = alpha_t_1 + c_t/s_t*(delk_t_1'*alpha_t_1-r);
-                    alpha_t(size(alpha_t_1,1)+1,:) = gptd.gamma_/s_t*(delk_t_1'*alpha_t_1-r);
+                    alpha_t(size(alpha_t_1,1)+1,:) = gamma_/s_t*(delk_t_1'*alpha_t_1-r);
 
                     C_t = zeros(size(C_t_1,1)+1,size(C_t_1,2)+1);
                     C_t(1:size(C_t_1,1),1:size(C_t_1,2)) = C_t_1 + 1/s_t*(c_t*c_t');
-                    C_t(size(C_t_1,1)+1,size(C_t_1,2)+1) = gptd.gamma_^2/s_t;
-                    C_t(size(C_t_1,1)+1,1:size(C_t_1,2)) = gptd.gamma_/s_t*c_t';
-                    C_t(1:size(C_t_1,1),size(C_t_1,2)+1) = gptd.gamma_/s_t*c_t;
+                    C_t(size(C_t_1,1)+1,size(C_t_1,2)+1) = gamma_^2/s_t;
+                    C_t(size(C_t_1,1)+1,1:size(C_t_1,2)) = gamma_/s_t*c_t';
+                    C_t(1:size(C_t_1,1),size(C_t_1,2)+1) = gamma_/s_t*c_t;
 
                     Q_t = zeros(size(Q_t_1,1)+1,size(Q_t_1,2)+1);
                     Q_t(1:size(Q_t_1,1),1:size(Q_t_1,2)) = s_t*Q_t_1 + (gt*gt');
@@ -131,10 +135,10 @@ classdef GPTD
                     H_t = zeros(size(H_t_1,1)+1,size(H_t_1,2)+1);
                     H_t(1:size(H_t_1,1),1:size(H_t_1,2)) = H_t_1;
                     H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
-                    H_t(size(H_t_1,1)+1,size(H_t_1,2)+1) = -gptd.gamma_;
+                    H_t(size(H_t_1,1)+1,size(H_t_1,2)+1) = -gamma_;
                     
                 else
-                    h_t = at_1 - gptd.gamma_*at;
+                    h_t = at_1 - gamma_*at;
                     ct = H_t_1'*gt - h_t;
                     st = gptd.sigma0^2 - ct'*delk_t_1;
 
@@ -169,6 +173,14 @@ classdef GPTD
             gptd.Q_ = Q_t;
             gptd.A = At;
             gptd.H_ = H_t;
+        end
+
+        function gptd = build_posterior(gptd, policy, num_episodes, max_episode_length, debug)
+
+
+
+
+
         end
         
         function visualize(gptd, grid_x, grid_x_dot)

@@ -21,7 +21,6 @@ class GPTD:
         self.K_inv = np.array([[]])
         self.alpha_ = np.array([[]])
         self.C_ = np.array([[]])
-        # self.r = np.array([[]])
 
     def k_(self,x):
 
@@ -178,9 +177,9 @@ class GPTD:
         self.H_ = H_t
 
     def build_posterior(self, policy, num_episodes, max_episode_length, debug):
-        '''
+        """
         policy is a dictionary for discrete and a function for continuous
-        '''
+        """
 
         s = self.env.reset()
         for e in range(num_episodes):    
