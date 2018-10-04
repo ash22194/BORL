@@ -16,10 +16,10 @@ x_limits = [0,2*pi];   % Don't change limits for x as the values are wrapped aro
 
 x_dot_limits = [-5,5]; % Choose limits and numpoints for x_dot such that goal x_dot is a point on the grid 
                        % i.e. x_dot_limits(1):dx_dot:x_dot_limits(2) has goal_x_dot
-Q = eye(2);
+Q = 0.6*eye(2);
 u_limits = [-5,5];
 R = 1;
-gtol = 0.1;
+gtol = 0.001;
 goal = [pi;0]; 
 start = [0;0];
 gamma_ = 1;
@@ -36,6 +36,7 @@ imagesc(V);
 xlabel('theta'); ylabel('theta-dot');
 title('Value Iteration');
 colorbar;
+pause(0.5);
 
 %% Build GP based estimate of value function using the computed policy
 dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
@@ -51,6 +52,8 @@ max_episode_length = 50;
 number_of_episodes = 150;
 debug_ = true;
 gptd.build_posterior(p_, number_of_episodes, max_episode_length, debug_);
+scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
+hold on;
 gptd.visualize(grid_x,grid_x_dot);
 
 function a = policy(p, grid_x, grid_x_dot, s)

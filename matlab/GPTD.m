@@ -87,11 +87,8 @@ classdef GPTD < handle
                 delk_t_1 = k_t_1 - gamma_*k_t;
                 gt = Q_t_1*H_t_1*delk_t_1;
                 
-                if (et > gptd.nu)
-                    D = zeros(size(gptd.D,1),size(gptd.D,2)+1);
-                    D(:,1:size(gptd.D,2)) = gptd.D;
-                    D(:,size(gptd.D,2)+1) = xt;
-                    gptd.D = D;
+                 if (et > gptd.nu)
+                    gptd.D(:,size(gptd.D,2)+1) = xt;
                     % Dimension issues
                     c_t = H_t_1'*gt - at_1;
                     %
@@ -103,6 +100,10 @@ classdef GPTD < handle
                     K_t(size(K_t_1,1)+1,size(K_t_1,2)+1) = ktt;
                     K_t(size(K_t_1,1)+1,1:size(K_t_1,2)) = k_t';
                     K_t(1:size(K_t_1,1),size(K_t_1,2)+1) = k_t;
+                    K_tc = cond(K_t);
+                    if (cond(K_tc) > 50)
+                        disp(strcat('Condition number of ',int2str(K_tc)));
+                    end
 
                     K_t_inv = zeros(size(K_t_1_inv,1)+1,size(K_t_1_inv,2)+1);
                     K_t_inv(1:size(K_t_1_inv,1),1:size(K_t_1_inv,2)) = et*K_t_1_inv + at*at';
@@ -210,7 +211,9 @@ classdef GPTD < handle
         function visualize(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
             V = gptd.get_value_function(grid_x,grid_x_dot);
             figure;
-            imagesc(V);
+            x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
+            y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
+            imagesc(x,y,V);
             xlabel('theta'); ylabel('theta-dot');
             title('GPTD Value function');
             colorbar;

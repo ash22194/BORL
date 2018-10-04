@@ -39,7 +39,7 @@ class GPTD:
         xt and xt_1 are numpy arrays of dimension dx1
         r is a scalar reward
         """
-        # set_trace()
+
         if (self.D.shape[0]==1 and self.D.shape[1]==0):
             # Empty dictionary
             self.D = np.zeros((xt.shape[0],2))
