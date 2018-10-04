@@ -1,4 +1,4 @@
-classdef GPTD
+classdef GPTD < handle
 
     properties (SetAccess='private')
         env
@@ -49,7 +49,7 @@ classdef GPTD
             k_ = gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))';
         end
         
-        function gptd = update(gptd, xt, xt_1, r, gamma_)
+        function update(gptd, xt, xt_1, r, gamma_)
             if (size(xt,1)==1)
                 xt=xt';
             end
@@ -65,7 +65,7 @@ classdef GPTD
                 K_t_inv = inv(K_t);
                 At = eye(2);
                 H_t = [1,-gamma_];
-                Q_t = 1/(H_t*K_t*H_t' + gptd.sigma0^2);
+                Q_t = [1/(H_t*K_t*H_t' + gptd.sigma0^2)];
                 alpha_t = H_t'*Q_t*r;
                 C_t = H_t'*Q_t*H_t;
             else
@@ -175,15 +175,27 @@ classdef GPTD
             gptd.H_ = H_t;
         end
 
-        function gptd = build_posterior(gptd, policy, num_episodes, max_episode_length, debug)
-
-
-
-
-
+        function build_posterior(gptd, policy, num_episodes, max_episode_length, debug_)
+            s = gptd.env.reset();
+            for e=1:1:num_episodes
+                is_terminal = false;
+                num_steps = 0;
+                while ((~is_terminal) && (num_steps < max_episode_length))
+                    num_steps = num_steps + 1;
+                    a = policy(s);
+                    [s_, r, is_terminal] = gptd.env.step(a);
+                    gptd.update(s_, s, r, gptd.gamma_);
+                    s = s_;
+                end
+                s_ = gptd.env.reset();
+                gptd.update(s_, s, 0, 0);
+                if (debug_)
+                    disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,2))));
+                end
+            end
         end
-        
-        function visualize(gptd, grid_x, grid_x_dot)
+
+        function V = get_value_function(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
             if (size(grid_x,1)~=size(grid_x_dot,1) || size(grid_x,2)~=size(grid_x_dot,2))
                 disp('Check grid');
             end
@@ -193,6 +205,10 @@ classdef GPTD
                     V(i,j) = gptd.kernel_vector([grid_x(i,j);grid_x_dot(i,j)])'*gptd.alpha_;
                 end
             end
+        end
+        
+        function visualize(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
+            V = gptd.get_value_function(grid_x,grid_x_dot);
             figure;
             imagesc(V);
             xlabel('theta'); ylabel('theta-dot');
