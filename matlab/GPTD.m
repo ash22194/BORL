@@ -187,6 +187,18 @@ classdef GPTD < handle
                     [s_, r, is_terminal] = gptd.env.step(a);
                     gptd.update(s_, s, r, gptd.gamma_);
                     s = s_;
+                    dx = (gptd.env.x_limits(2)-gptd.env.x_limits(1))/(gptd.env.num_points_x - 1); 
+                    dx_dot = (gptd.env.x_dot_limits(2)-gptd.env.x_dot_limits(1))/(gptd.env.num_points_x_dot - 1);
+                    [grid_x,grid_x_dot] = meshgrid(gptd.env.x_limits(1):dx:gptd.env.x_limits(2),gptd.env.x_dot_limits(1):dx_dot:gptd.env.x_dot_limits(2));
+                    V = gptd.get_value_function(grid_x, grid_x_dot);
+                    x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
+                    y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
+                    imagesc(x,y,V);
+                    xlabel('theta'); ylabel('theta-dot');
+                    colorbar;
+                    hold on;
+                    scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
+                    close;
                 end
                 s_ = gptd.env.reset();
                 gptd.update(s_, s, 0, 0);
