@@ -11,4 +11,4 @@ class GaussianKernel:
 		if (self.sigma==0):
 			return (x==y).all()
 
-		return exp(-norm(x-y)/self.sigma)
+		return exp(-norm(x-y)**2/self.sigma)

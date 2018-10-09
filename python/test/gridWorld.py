@@ -69,7 +69,7 @@ def main():
     plt.imshow(v_gptd)
     plt.colorbar()
     plt.title('Value Function - GPTD')
-    # plt.savefig(envName+'_valueFunction')
+    # plt.savefig(envName+'_valueFunctionGPTD')
     plt.show()
     plt.close()
     set_trace()

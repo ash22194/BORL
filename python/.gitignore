@@ -1,4 +1,5 @@
 *.ipynb
+*.pyc
 .python-version
 build/
 dist/
