@@ -35,7 +35,7 @@ classdef GPTD < handle
         
         function k = kernel(gptd,x,y)
             % x,y are nx1 inputs that represent states
-            k = exp(-sum((x-y).^2)/(2*gptd.sigmak^2));
+            k = exp(-sum((x-y).^2,1)/(2*gptd.sigmak^2));
         end
         
         function k_ = kernel_vector(gptd,x)
@@ -46,7 +46,7 @@ classdef GPTD < handle
                 disp('Check dimension');
                 return;
             end
-            k_ = gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))';
+            k_ = sparse(gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))');
         end
         
         function update(gptd, xt, xt_1, r, gamma_)
@@ -59,13 +59,13 @@ classdef GPTD < handle
             if isempty(gptd.D)
                 gptd.D(:,1) = xt_1;
                 gptd.D(:,2) = xt;
-                K_t = zeros(2,2);
+                K_t = sparse(zeros(2,2));
                 K_t(:,1) = gptd.kernel_vector(xt_1);
                 K_t(:,2) = gptd.kernel_vector(xt);
                 K_t_inv = inv(K_t);
-                At = eye(2);
-                H_t = [1,-gamma_];
-                Q_t = [1/(H_t*K_t*H_t' + gptd.sigma0^2)];
+                At = sparse(eye(2));
+                H_t = sparse([1,-gamma_]);
+                Q_t = sparse([1/(H_t*K_t*H_t' + gptd.sigma0^2)]);
                 alpha_t = H_t'*Q_t*r;
                 C_t = H_t'*Q_t*H_t;
             else
@@ -87,7 +87,7 @@ classdef GPTD < handle
                 delk_t_1 = k_t_1 - gamma_*k_t;
                 gt = Q_t_1*H_t_1*delk_t_1;
                 
-                 if (et > gptd.nu)
+                if ((et - gptd.nu) > 10^(-4))
                     gptd.D(:,size(gptd.D,2)+1) = xt;
                     % Dimension issues
                     c_t = H_t_1'*gt - at_1;
@@ -95,48 +95,22 @@ classdef GPTD < handle
                     delktt = at_1'*(delk_t_1 - gamma_*k_t) + gamma_^2*ktt;
                     s_t = gptd.sigma0^2 + delktt - delk_t_1'*C_t_1*delk_t_1;
 
-                    K_t = zeros(size(K_t_1,1)+1,size(K_t_1,2)+1);
-                    K_t(1:size(K_t_1,1),1:size(K_t_1,2)) = K_t_1;
-                    K_t(size(K_t_1,1)+1,size(K_t_1,2)+1) = ktt;
-                    K_t(size(K_t_1,1)+1,1:size(K_t_1,2)) = k_t';
-                    K_t(1:size(K_t_1,1),size(K_t_1,2)+1) = k_t;
-                    K_tc = cond(K_t);
-                    if (cond(K_tc) > 50)
-                        disp(strcat('Condition number of ',int2str(K_tc)));
-                    end
+                    K_t = [K_t_1,k_t;k_t',ktt]; 
+                    
+                    K_t_inv = [K_t_1_inv+1/et*(at*at'), -at/et; -at'/et, 1/et];
+                    
+                    alpha_t = [alpha_t_1 + c_t/s_t*(delk_t_1'*alpha_t_1-r); gamma_/s_t*(delk_t_1'*alpha_t_1-r)];
+                    
+                    C_t = [C_t_1 + 1/s_t*(c_t*c_t'), gamma_/s_t*c_t; gamma_/s_t*c_t', gamma_^2/s_t];
+                    
+                    Q_t = [Q_t_1 + 1/s_t*(gt*gt'), -gt/s_t; -gt'/s_t, 1/s_t];
 
-                    K_t_inv = zeros(size(K_t_1_inv,1)+1,size(K_t_1_inv,2)+1);
-                    K_t_inv(1:size(K_t_1_inv,1),1:size(K_t_1_inv,2)) = et*K_t_1_inv + at*at';
-                    K_t_inv(size(K_t_1_inv,1)+1,size(K_t_1_inv,2)+1) = 1;
-                    K_t_inv(size(K_t_1_inv,1)+1,1:size(K_t_1_inv,2)) = -at';
-                    K_t_inv(1:size(K_t_1_inv,1),size(K_t_1_inv,2)+1) = -at;
-                    K_t_inv = 1/et*K_t_inv;
-
-                    alpha_t = zeros(size(alpha_t_1,1)+1,size(alpha_t_1,2));
-                    alpha_t(1:size(alpha_t_1,1),:) = alpha_t_1 + c_t/s_t*(delk_t_1'*alpha_t_1-r);
-                    alpha_t(size(alpha_t_1,1)+1,:) = gamma_/s_t*(delk_t_1'*alpha_t_1-r);
-
-                    C_t = zeros(size(C_t_1,1)+1,size(C_t_1,2)+1);
-                    C_t(1:size(C_t_1,1),1:size(C_t_1,2)) = C_t_1 + 1/s_t*(c_t*c_t');
-                    C_t(size(C_t_1,1)+1,size(C_t_1,2)+1) = gamma_^2/s_t;
-                    C_t(size(C_t_1,1)+1,1:size(C_t_1,2)) = gamma_/s_t*c_t';
-                    C_t(1:size(C_t_1,1),size(C_t_1,2)+1) = gamma_/s_t*c_t;
-
-                    Q_t = zeros(size(Q_t_1,1)+1,size(Q_t_1,2)+1);
-                    Q_t(1:size(Q_t_1,1),1:size(Q_t_1,2)) = s_t*Q_t_1 + (gt*gt');
-                    Q_t(size(Q_t_1,1)+1,size(Q_t_1,2)+1) = 1;
-                    Q_t(size(Q_t_1,1)+1,1:size(Q_t_1,2)) = -gt';
-                    Q_t(1:size(Q_t_1,1),size(Q_t_1,2)+1) = -gt;
-                    Q_t = Q_t/s_t;
-
-                    At = zeros(size(At_1,1)+1,size(At_1,2)+1);
-                    At(1:size(At_1,1),1:size(At_1,2)) = At_1;
+                    At = At_1;
                     At(size(At_1,1)+1,size(At_1,2)+1) = 1;
-
-                    H_t = zeros(size(H_t_1,1)+1,size(H_t_1,2)+1);
-                    H_t(1:size(H_t_1,1),1:size(H_t_1,2)) = H_t_1;
-                    H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
+                    
+                    H_t = H_t_1;
                     H_t(size(H_t_1,1)+1,size(H_t_1,2)+1) = -gamma_;
+                    H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
                     
                 else
                     h_t = at_1 - gamma_*at;
@@ -150,20 +124,12 @@ classdef GPTD < handle
 
                     C_t = C_t_1 + 1/st*(ct*ct');
 
-                    Q_t = zeros(size(Q_t_1,1)+1,size(Q_t_1,2)+1);
-                    Q_t(1:size(Q_t_1,1),1:size(Q_t_1,2)) = st*Q_t_1 + (gt*gt');
-                    Q_t(size(Q_t_1,1)+1,size(Q_t_1,2)+1) = 1;
-                    Q_t(size(Q_t_1,1)+1,1:size(Q_t_1,2)) = -gt';
-                    Q_t(1:size(Q_t_1,1),size(Q_t_1,2)+1) = -gt;
-                    Q_t = Q_t/st;
+                    Q_t = [Q_t_1 + 1/st*(gt*gt'), -gt/st; -gt'/st, 1/st]; 
 
-                    At = zeros(size(At_1,1)+1,size(At_1,2));
-                    At(1:size(At_1,1),:) = At_1;
-                    At(size(At_1,1)+1,:) = at';
+                    At = [At_1;at'];
 
-                    H_t = zeros(size(H_t_1,1)+1,size(H_t_1,2));
-                    H_t(1:size(H_t_1,1),:) = H_t_1;
-                    H_t(size(H_t_1,1)+1,:) = h_t';
+                    H_t = [H_t_1; h_t'];
+                    
                 end
             end
             
@@ -187,50 +153,63 @@ classdef GPTD < handle
                     [s_, r, is_terminal] = gptd.env.step(a);
                     gptd.update(s_, s, r, gptd.gamma_);
                     s = s_;
-                    dx = (gptd.env.x_limits(2)-gptd.env.x_limits(1))/(gptd.env.num_points_x - 1); 
-                    dx_dot = (gptd.env.x_dot_limits(2)-gptd.env.x_dot_limits(1))/(gptd.env.num_points_x_dot - 1);
-                    [grid_x,grid_x_dot] = meshgrid(gptd.env.x_limits(1):dx:gptd.env.x_limits(2),gptd.env.x_dot_limits(1):dx_dot:gptd.env.x_dot_limits(2));
-                    V = gptd.get_value_function(grid_x, grid_x_dot);
-                    x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
-                    y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
-                    imagesc(x,y,V);
-                    xlabel('theta'); ylabel('theta-dot');
-                    colorbar;
-                    hold on;
-                    scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
-                    close;
+% Display grid world
+%                     disp(strcat('Current : ',int2str(s)));
+%                     V = gptd.get_value_function(1:1:gptd.env.num_states);
+%                     V = reshape(V,4,4);
+%                     imagesc(V);
+%                     colorbar;
+%                     close;
+
+% Display for swing-up
+%                     dx = (gptd.env.x_limits(2)-gptd.env.x_limits(1))/(gptd.env.num_points_x - 1); 
+%                     dx_dot = (gptd.env.x_dot_limits(2)-gptd.env.x_dot_limits(1))/(gptd.env.num_points_x_dot - 1);
+%                     [grid_x,grid_x_dot] = meshgrid(gptd.env.x_limits(1):dx:gptd.env.x_limits(2),gptd.env.x_dot_limits(1):dx_dot:gptd.env.x_dot_limits(2));
+%                     V = gptd.get_value_function(grid_x, grid_x_dot);
+%                     x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
+%                     y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
+%                     imagesc(x,y,V);
+%                     xlabel('theta'); ylabel('theta-dot');
+%                     colorbar;
+%                     hold on;
+%                     scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
+%                     close;
                 end
                 s_ = gptd.env.reset();
+                if (size(gptd.D,2)>gptd.env.num_states)
+                    disp('Check dictionary size');
+                end
                 gptd.update(s_, s, 0, 0);
+                s = s_;
                 if (debug_)
                     disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,2))));
                 end
             end
         end
 
-        function V = get_value_function(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
-            if (size(grid_x,1)~=size(grid_x_dot,1) || size(grid_x,2)~=size(grid_x_dot,2))
-                disp('Check grid');
-            end
-            V = zeros(size(grid_x));
-            for i=1:1:size(grid_x,1)
-                for j=1:1:size(grid_x,2)
-                    V(i,j) = gptd.kernel_vector([grid_x(i,j);grid_x_dot(i,j)])'*gptd.alpha_;
-                end
+        function V = get_value_function(gptd, states)
+            V = zeros(size(states,2),1);
+            for i=1:1:size(states,2)
+                s = states(:,i);
+                V(i) = gptd.kernel_vector(s)'*gptd.alpha_;
             end
         end
         
         function visualize(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
-            V = gptd.get_value_function(grid_x,grid_x_dot);
+            states = zeros(2,size(grid_x,2)*size(grid_x_dot,1));
+            for i = 1:1:size(grid_x,2)
+                for j = 1:1:size(grid_x_dot,1)
+                    states(:,(i-1)*size(grid_x_dot,1) + j) = [grid_x(j,i);grid_x_dot(j,i)];
+                end
+            end
+            V = gptd.get_value_function(states);
             figure;
             x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
             y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
-            imagesc(x,y,V);
+            imagesc(x,y,reshape(V,size(grid_x_dot,1),size(grid_x,2)));
             xlabel('theta'); ylabel('theta-dot');
             title('GPTD Value function');
             colorbar;
         end
-    
     end
-
 end

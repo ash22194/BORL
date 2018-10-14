@@ -6,6 +6,8 @@ classdef pendulum < handle
 	num_points_x
 	x_dot_limits
 	num_points_x_dot
+    num_states
+    num_actions
 	Q
 	R
 	x
@@ -13,13 +15,15 @@ classdef pendulum < handle
 	end
 	
 	methods 
-		function p = pendulum(m, dt, x_limits, num_points_x, x_dot_limits, num_points_x_dot, Q, R, goal)
+		function p = pendulum(m, dt, x_limits, num_points_x, x_dot_limits, num_points_x_dot, num_points_u, Q, R, goal)
 			p.dt = dt;
 			p.m = m;
 			p.x_limits = x_limits;
 			p.x_dot_limits = x_dot_limits;
 			p.num_points_x = num_points_x;
 			p.num_points_x_dot = num_points_x_dot;
+            p.num_states = num_points_x*num_points_x_dot;
+            p.num_actions = num_points_u;
 			p.Q = Q;
 			p.R = R;
 			p.goal = goal;

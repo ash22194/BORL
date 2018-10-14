@@ -1,6 +1,7 @@
 import numpy as np
 import gym
 import GPy
+import matplotlib.pyplot as plt
 from copy import deepcopy
 from numpy.linalg import norm
 from ipdb import set_trace
@@ -54,7 +55,6 @@ class GPTD:
             Q_t = np.linalg.inv(np.dot(H_t,np.dot(K_t,H_t.T))+np.diag([self.sigma0**2]))
             alpha_t = np.dot(H_t.T,Q_t)*r
             C_t = np.dot(H_t.T,np.dot(Q_t,H_t))
-            # set_trace()
         else:
 
             K_t_1 = deepcopy(self.K_)
@@ -133,16 +133,8 @@ class GPTD:
                 # else
                 # D unchanged
                 # Compute alphat and Ct
-                # if (abs(et) > 10**(-6)):
-                #     print('et : %f'%et)
-                # assert abs(et)<10**(-5), "Negative projection error?"    
 
                 h_t = at_1 - gamma*at
-                # error = norm(delk_t_1-np.dot(K_t_1,h_t))
-                # if (error > 10**(-6)):
-                #     print('Error : %f'%error)
-                # assert (error<10**(-5)), "Check delk_t_1"
-
                 ct = np.dot(H_t_1.T,gt) - h_t # Added transpose... Mistake in the paper
                 st = self.sigma0**2 - np.dot(ct.T,delk_t_1)
                 
@@ -185,6 +177,7 @@ class GPTD:
         for e in range(num_episodes):    
             is_terminal = False
             num_steps = 0
+            
             while ((num_steps < max_episode_length) and (not is_terminal)):
                 num_steps+=1
                 a = policy[s] # For discrete ... Let's worry about continuous later!

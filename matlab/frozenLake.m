@@ -9,6 +9,7 @@ classdef frozenLake < handle
     starts
     holes
 	goal
+    state_count
     s
 	end
 	
@@ -23,6 +24,7 @@ classdef frozenLake < handle
             f.starts = find(map=='S');
             f.goal = find(map=='G');
             f.holes = find(map=='H');
+            f.state_count = zeros(f.num_states,1);
             f.reset();
 		end
 
@@ -66,17 +68,25 @@ classdef frozenLake < handle
             elseif (u==4)
                 s_(2) = max(f.s(2) - 1,1);
             end
-			index = (s_(1)-1)*f.map_y + s_(2);
+			index_ = (s_(1)-1)*f.map_y + s_(2);
+            index = (f.s(1)-1)*f.map_y + f.s(2);
             is_goal = false;
             r_= 0;
-            if (~isempty(find(f.holes==index,1)))
-                r_ = -1;
+            if (~isempty(find(f.holes==index,1)) || ~isempty(find(f.goal==index,1)))
+                s_ = index;
                 is_goal = true;
-            elseif (~isempty(find(f.goal==index,1)))
-                r_ = 1;
-                is_goal = true;
+            else
+                if (~isempty(find(f.holes==index_,1)))
+                    r_ = -1;
+                    is_goal = true;
+                elseif (~isempty(find(f.goal==index_,1)))
+                    r_ = 1;
+                    is_goal = true;
+                end
+                f.s = s_;
+                s_ = index_;
             end
-            s_ = index;
+            f.state_count(s_,1) = f.state_count(s_,1) + 1; 
 		end
 
 		function s = reset(f)
@@ -87,6 +97,20 @@ classdef frozenLake < handle
             s(2) = index - (s(1)-1)*f.map_y;
             f.s = s;
             s = index;
-		end
+            f.state_count(s,1) = f.state_count(s,1) + 1; 
+        end
+        
+        function set(f,s)
+            if (size(s,1)==1 && size(s,2)==1)
+                s_ = zeros(2,1);
+                s_(1) = ceil(s/f.map_y);
+                s_(2) = s - (s_(1)-1)*f.map_y;
+                f.s = s_;
+            elseif ((size(s,1)==2 && size(s,2)==1) || (size(s,1)==1 && size(s,2)==2))
+                f.s = s;
+            else
+                disp('Check state input');
+            end
+        end
 	end
 end
