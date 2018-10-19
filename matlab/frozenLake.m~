@@ -71,8 +71,7 @@ classdef frozenLake < handle
 			index_ = (s_(1)-1)*f.map_y + s_(2);
             index = (f.s(1)-1)*f.map_y + f.s(2);
             is_goal = false;
-%             r_= -0.02;
-            r_ = 0;
+            r_= 0;
             if (~isempty(find(f.holes==index,1)) || ~isempty(find(f.goal==index,1)))
                 s_ = index;
                 is_goal = true;
@@ -92,18 +91,12 @@ classdef frozenLake < handle
 
 		function s = reset(f)
             s = zeros(2,1);
-            unvisited = find(f.state_count(f.starts,:) == 0);
+            unvisited = find(f.state_count == 0);
 			if (isempty(unvisited))
-                index = randperm(length(f.starts),1);
             else
-                index = randperm(length(unvisited),1);
-                index = unvisited(index);
+                
             end
-            index = f.starts(index);
-            s(1) = ceil(index/f.map_y);
-            s(2) = index - (s(1)-1)*f.map_y;
-            f.s = s;
-            s = index;
+            
             f.state_count(s,1) = f.state_count(s,1) + 1; 
         end
         
