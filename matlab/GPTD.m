@@ -193,11 +193,23 @@ classdef GPTD < handle
             end
         end
         
-        function build_posterior_vi(gptd, policy, num_iterations, debug)
+        function build_posterior_vi(gptd, states, policy, num_iterations, debug_)
             
             for iter = 1:1:num_iterations
-                for s=1:1:gptd.env.num_states
-                    
+                if (debug_)
+                    disp(strcat('Iteration : ',int2str(iter)));
+                end
+                is_terminal = false;
+                for s=1:1:size(states,2)
+                    s1 = states(:,s);
+                    if (is_terminal)
+                        gptd.update(s1,s2,0,0);
+                    end
+                    if (gptd.env.set(s1))
+                        continue;
+                    end
+                    [s2, r, is_terminal] = gptd.env.step(policy(s1));
+                    gptd.update(s2,s1,r,gptd.gamma_);
                 end 
             end
             

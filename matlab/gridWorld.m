@@ -1,5 +1,5 @@
     close all;
-%     clear;
+    clear;
     clc;
     
 %% Use Q-Learning to learn a policy
@@ -105,12 +105,13 @@
     nu = 0;
     sigma0 = 0;
     sigmak = sqrt(0.2);
-%     gptd = GPTD(env, nu, sigma0, sigmak, gamma_);
+    gptd = GPTD(env, nu, sigma0, sigmak, gamma_);
     max_episode_length = 70;
     number_of_episodes = 150;
     debug_ = true;
 %     profile on;
-    gptd.build_posterior(policy, number_of_episodes, max_episode_length, debug_);
+%     gptd.build_posterior_monte_carlo(policy, number_of_episodes, max_episode_length, debug_);
+    gptd.build_posterior_vi(1:1:(map_size(1)*map_size(2)), policy, number_of_episodes, debug_);
 %     profile viewer;save(strcat('GridWorldWorkspace',int2str(map_size(1)),'.mat'));
     V_gptd = gptd.get_value_function(1:1:env.num_states);
     

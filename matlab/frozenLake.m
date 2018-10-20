@@ -107,14 +107,22 @@ classdef frozenLake < handle
             f.state_count(s,1) = f.state_count(s,1) + 1; 
         end
         
-        function set(f,s)
+        function is_terminal = set(f,s)
+            is_terminal = false;
             if (size(s,1)==1 && size(s,2)==1)
                 s_ = zeros(2,1);
                 s_(1) = ceil(s/f.map_y);
                 s_(2) = s - (s_(1)-1)*f.map_y;
                 f.s = s_;
+                if (any(f.holes==s) || any(f.goal==s))
+                    is_terminal = true;
+                end
             elseif ((size(s,1)==2 && size(s,2)==1) || (size(s,1)==1 && size(s,2)==2))
                 f.s = s;
+                index = (s(1) - 1)*f.map_y + s(2);
+                if (any(f.holes==index) || any(f.goal==index))
+                    is_terminal = true;
+                end
             else
                 disp('Check state input');
             end

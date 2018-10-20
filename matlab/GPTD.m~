@@ -87,7 +87,7 @@ classdef GPTD < handle
                 delk_t_1 = k_t_1 - gamma_*k_t;
                 gt = Q_t_1*H_t_1*delk_t_1;
                 
-                if ((et - gptd.nu) > 10^(-7))
+                if ((et - gptd.nu) > 10^(-4))
                     gptd.D(:,size(gptd.D,2)+1) = xt;
                     % Dimension issues
                     c_t = H_t_1'*gt - at_1;
@@ -113,6 +113,9 @@ classdef GPTD < handle
                     H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
                     
                 else
+                    if (~any(gptd.D==xt) && (gptd.env.state_count(xt) > 0))
+                        disp(strcat('Why should it be excluded? ',int2str(xt),', error ',string(et)));
+                    end
                     h_t = at_1 - gamma_*at;
                     ct = H_t_1'*gt - h_t;
                     st = gptd.sigma0^2 - ct'*delk_t_1;
@@ -132,6 +135,9 @@ classdef GPTD < handle
                     
                 end
             end
+            if (any(isnan(alpha_t)))
+                disp('Check alpha!');
+            end
             
             gptd.K_ = K_t;
             gptd.K_inv = K_t_inv;
@@ -142,7 +148,7 @@ classdef GPTD < handle
             gptd.H_ = H_t;
         end
 
-        function build_posterior(gptd, policy, num_episodes, max_episode_length, debug_)
+        function build_posterior_monte_carlo(gptd, policy, num_episodes, max_episode_length, debug_)
             s = gptd.env.reset();
             for e=1:1:num_episodes
                 is_terminal = false;
@@ -186,7 +192,29 @@ classdef GPTD < handle
                 end
             end
         end
-
+        
+        function build_posterior_vi(gptd, states, policy, num_iterations, debug_)
+            
+            for iter = 1:1:num_iterations
+                if (debug_)
+                    disp(strcat('Iteration : ',int2str(iter)));
+                end
+                is_terminal = false;
+                for s=1:1:size(states,2)
+                    s1 = states(:,s);
+                    if (is_terminal)
+                        gptd.update(s1,s2,0,0);
+                    end
+                    if (gptd.env.set(s1))
+                        i
+                    end
+                    [s2, r, is_terminal] = gptd.env.step(policy(s1));
+                    gptd.update(s2,s1,r,gptd.gamma_);
+                end 
+            end
+            
+        end
+        
         function V = get_value_function(gptd, states)
             V = zeros(size(states,2),1);
             for i=1:1:size(states,2)
