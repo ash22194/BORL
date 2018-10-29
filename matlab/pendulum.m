@@ -64,6 +64,21 @@ classdef pendulum < handle
 			x(1) = p.x_limits(1) + (p.x_limits(2) - p.x_limits(1))*rand();
 			x(2) = p.x_dot_limits(1) + (p.x_dot_limits(2) - p.x_dot_limits(1))*rand();
 			p.x = x;
-		end
+        end
+        
+        function s_ = dynamics(p, s, a)
+            s_ = zeros(size(s));
+            s_(:,1) = s(:,1) + s(:,2)*p.dt;
+            s_(:,2) = s(:,2) + (a - sin(s(:,1)) - s(:,2))*p.dt;
+            
+            s_(s_(:,1) > p.x_limits(2),1) = s_(s_(:,1) > p.x_limits(2),1) - p.x_limits(2);
+			s_(s_(:,1) < p.x_limits(1),1) = s_(s_(:,1) < p.x_limits(1),1) + p.x_limits(2);
+			s_(s_(:,2) > p.x_dot_limits(2),2) = p.x_dot_limits(2);
+			s_(s_(:,2) < p.x_dot_limits(1),2) = p.x_dot_limits(1);
+        end
+        
+        function r = cost(p, s_, a)
+            r = (p.R*a.^2 + (s_ - repmat(p.goal',size(s_,1),1))*p.Q*(s_ - repmat(p.goal',size(s_,1),1))')*p.dt;
+        end
 	end
 end
