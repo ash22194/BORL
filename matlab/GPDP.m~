@@ -90,7 +90,7 @@ classdef GPDP < handle
                 r = gpdp.reward(states_, gpdp.actions(gpdp.policy,:));
                 V = gpdp.K_v_inv*gpdp.muV;
                 for s=1:1:size(gpdp.states,1)
-                    % Update Q values
+                    % Update Q value
                     k = gpdp.kernelSE_v(repmat(states_(s,:),size(gpdp.states,1),1),gpdp.states);
                     gpdp.muQ(s,gpdp.policy(s)) = r(s) + gpdp.gamma_*(k'*V);
                     [~,minA] = min(gpdp.muQ(s,:));

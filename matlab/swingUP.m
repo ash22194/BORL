@@ -80,6 +80,10 @@ Q_ = zeros(size(states,1),size(actions,1));
 gpdp = GPDP(dynamics, reward, states, actions, V_, Q_, gamma_);
 debug_ = true;
 profile on;
-gpdp.build_policy(50, debug_);
+gpdp.build_policy(500, debug_);
 profile off;
+figure;
+imagesc(reshape(gpdp.muV,size(grid_x,1),size(grid_x,2)));
+colorbar;
+
             

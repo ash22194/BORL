@@ -78,7 +78,7 @@ classdef pendulum < handle
         end
         
         function r = cost(p, s_, a)
-            r = (p.R*a.^2 + (s_ - repmat(p.goal',size(s_,1),1))*p.Q*(s_ - repmat(p.goal',size(s_,1),1))')*p.dt;
+            r = (p.R*a.^2 + sum(((s_ - repmat(p.goal',size(s_,1),1))*p.Q).*(s_ - repmat(p.goal',size(s_,1),1)),2))*p.dt;
         end
 	end
 end
