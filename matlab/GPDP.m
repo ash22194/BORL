@@ -28,16 +28,6 @@ classdef GPDP < handle
             gpdp.states = states;
             gpdp.actions = actions;
             gpdp.gamma_ = gamma_;
-            
-            % Compute MAP hyperparameters
-            % meanfunc = [];
-            % covfunc = @covSEiso;
-            % likfunc = @likGauss;
-            % hyp = struct('mean',[],'cov',[0,0],'lik',-1);
-            % hyp = minimize(hyp, @gp, -100, @infGaussLik, meanfunc, covfunc, likfunc, states, V);
-            % gpdp.l_v = exp(hyp.cov(1))^2;
-            % gpdp.sigman_v = exp(hyp.lik)^2;
-            % gpdp.sigmaf_v = exp(hyp.cov(2))^2;
             gpdp.l_v = 0.2;
             gpdp.sigman_v = 10^(-4);
             gpdp.sigmaf_v = 1;
@@ -49,10 +39,6 @@ classdef GPDP < handle
             gpdp.K_v_inv = inv(gpdp.K_v + gpdp.sigman_v*eye(size(states,1)));
             gpdp.muV = V;
             
-            % hyp = minimize(hyp, @gp, -100, @infGaussLik, meanfunc, covfunc, likfunc, actions, zeros(size(actions,1),1));
-            % gpdp.l_q = exp(hyp.cov(1))^2;
-            % gpdp.sigman_q = exp(hyp.lik)^2;
-            % gpdp.sigmaf_q = exp(hyp.cov(2))^2;
             gpdp.l_q = 0.2;
             gpdp.sigman_q = 10^(-4);
             gpdp.sigmaf_q = 1;
