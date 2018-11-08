@@ -38,30 +38,6 @@ title('Value Iteration');
 colorbar;
 pause(0.5);
 
-%% Build GP based estimate of value function using the computed policy
-% dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
-% dx_dot = (x_dot_limits(2)-x_dot_limits(1))/(numPointsx_dot - 1);
-% [grid_x,grid_x_dot] = meshgrid(x_limits(1):dx:x_limits(2),x_dot_limits(1):dx_dot:x_dot_limits(2));
-% p_ = @(s) policy(p, grid_x, grid_x_dot, s);
-% % nu = min(dx,dx_dot);
-% nu = 0;
-% sigma0 = 0;
-% sigmak = sqrt(0.2);
-% env = pendulum(m, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-% gptd = GPTD(env, nu, sigma0, sigmak, gamma_);
-% max_episode_length = 50;
-% number_of_episodes = 500;
-% debug_ = true;
-% gptd.build_posterior(p_, number_of_episodes, max_episode_length, debug_);
-% gptd.visualize(grid_x,grid_x_dot);
-% hold on;
-% scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
-% hold off;
-% 
-% function a = policy(p, grid_x, grid_x_dot, s)
-%   a = interp2(grid_x, grid_x_dot, p, s(1), s(2));
-% end
-
 %% Run GPDP
 
 dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
