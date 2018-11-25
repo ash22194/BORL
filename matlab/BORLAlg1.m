@@ -13,6 +13,7 @@ classdef BORLAlg1 < handle
         xQ_mismatch           % data points for the mismatch GP - x (s,a)
         KQ_mismatch
         KQ_mismatch_inv
+        KQ_mismatch_inv_times_yQ
         % policy              % No explicit policy for now... Policy derived from Q function
     end
     
@@ -75,34 +76,62 @@ classdef BORLAlg1 < handle
                     % Add point in the mismatch GP
                     x = [state_visits{t,1}', state_visits{t,2}'];
                     y = R - muQ;
-                    k = borl.kernel_mismatch(borl.xQ_mismatch, ones(size(borl.xQ_mismatch,1),1)*x);
-                    xx = borl.kernel_mismatch(x,x);
                     
-                    b = -borl.KQ_mismatch_inv*k;
-                    c = 1/(xx + k'*b);
-                    a = borl.KQ_mismatch_inv + c*(b*b');
-                    b = b*c;
-                    
-                    borl.KQ_mismatch_inv = [a, b; b', c];
-                    borl.KQ_mismatch = [borl.KQ_mismatch, k; k', xx];
-                    
-                    borl.xQ_mismatch = [borl.xQ_mismatch; x];
-                    borl.yQ_mismatch = y;
+                    if (isfield(borl,'xQ_mismatch') && size(borl.xQ_mismatch,1)>1)
+                        k = borl.kernel_mismatch(repmat(x,size(borl.xQ_mismatch,1),1),borl.xQ_mismatch);
+                        xx = borl.kernel_mismatch(x,x);
+
+                        b = -borl.KQ_mismatch_inv*k;
+                        c = 1/(xx + k'*b);
+                        a = borl.KQ_mismatch_inv + c*(b*b');
+                        b = b*c;
+
+                        borl.KQ_mismatch_inv = [a, b; b', c];
+                        borl.KQ_mismatch = [borl.KQ_mismatch, k; k', xx];
+                        borl.xQ_mismatch = [borl.xQ_mismatch; x];
+                        borl.yQ_mismatch = [borl.yQ_mismatch; y];
+                        
+                    elseif (isfield(borl,'xQ_mismatch') && size(borl.xQ_mismatch,1)==1)
+                        borl.xQ_mismatch = [borl.xQ_mismatch; x];
+                        borl.yQ_mismatch = [borl.yQ_mismatch; y];
+                        borl.KQ_mismatch = zeros(2,2);
+                        borl.KQ_mismatch(:,1) = borl.kernel_mismatch(repmat(borl.xQ_mismatch(1,:),2,1),borl.xQ_mismatch);
+                        borl.KQ_mismatch(:,2) = borl.kernel_mismatch(repmat(borl.xQ_mismatch(2,:),2,1),borl.xQ_mismatch);
+                        borl.KQ_mismatch_inv = pinv(borl.KQ_mismatch);
+                        
+                    else
+                        borl.xQ_mismatch = x;
+                        borl.yQ_mismatch = y;
+                    end
                 end
-            end  
+            end 
+            borl.KQ_mismatch_inv_times_yQ = borl.KQ_mismatch_inv*borl.yQ_mismatch;
         end
         
-        function select_action(borl, state)
+        function a = select_action(borl, state)
            % Use bootstrapped + mismatch GP to pick an action
            num_a_to_sample = 10;
-           actions_sampled = borl.actions(:,1)*ones(1,num_a_to_sample) ...
-               + rand(size(borl.actions,1), num_a_to_sample).*((borl.actions(:,2) - borl.actions(:,1))*ones(1,num_a_to_sample));
-           states_sampled = state*ones(1,num_a_to_sample);
+           actions_sampled = repmat(borl.actions(:,1),1,num_a_to_sample) ...
+               + rand(size(borl.actions,1), num_a_to_sample).*repmat((borl.actions(:,2) - borl.actions(:,1)),1,num_a_to_sample);
+           states_sampled = repmat(state,1,num_a_to_sample);
            
            x = [states_sampled', actions_sampled'];
-           % Sample mismatch for each action
-           Q = muQ(states_sampled', actions_sampled) + borl.kernel_mismatch(x,);
            
+           % Sample mismatch for each action
+           Q = zeros(num_a_to_sample,1);
+           for i=1:1:num_a_to_sample
+               if (isfield(borl,'xQ_mismatch'))
+                   k_mismatch = borl.kernel_mismatch(repmat(x(i,:),size(borl.xQ_mismatch,1),1), borl.xQ_mismatch);
+                   Q(i,1) = muQ(states_sampled(:,i)', actions_sampled(:,i)') + k_mismatch'*borl.KQ_mismatch_inv_times_yQ ...
+                        + ((borl.kernel_mismatch(x(i,:),x(i,:)) - k_mismatch'*borl.KQ_mismatch_inv*k_mismatch) + ...
+                            borl.sigmaQ_bootstrapped(states_sampled(:,i)', actions_sampled(:,i)'))*randn();
+               else
+                   Q(i,1) = muQ(states_sampled(:,i)', actions_sampled(:,i)') + ...
+                            borl.sigmaQ_bootstrapped(states_sampled(:,i)', actions_sampled(:,i)')*randn();   
+               end
+           end
+           [~,minA] = min(Q);
+           a = actions_sampled(:,minA);
         end
     end
 end
