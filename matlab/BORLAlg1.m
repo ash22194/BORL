@@ -43,16 +43,19 @@ classdef BORLAlg1 < handle
                 t = 0;
                 state = borl.env.reset();
                 is_terminal = false;
-                state_visits = cell(horizon,3);
+                state_visits = cell(horizon+1,3);
                 while(~is_terminal && t<horizon)
                     t = t+1;
-                    a = borl.select_action(state);
+                    [~,a] = borl.select_action(state);
                     [next_state, reward, is_terminal] = borl.env.step(a);
                     state_visits{t,1} = state;
                     state_visits{t,2} = a;
                     state_visits{t,3} = reward;
                     state = next_state;
                 end
+                state_visits{t+1,1} = state;
+                state_visits{t+1,2} = 0;
+                state_visits{t+1,3} = 0;
                 num_points_added = borl.update_mismatch_GP(state_visits, t);
                 if (debug_)
                     disp(strcat('Episode :',num2str(iter),', Mismatch points added :',num2str(num_points_added),' Total points :',num2str(size(borl.xQ_mismatch,1))));
@@ -62,17 +65,19 @@ classdef BORLAlg1 < handle
         
         function num_points_added = update_mismatch_GP(borl, state_visits, horizon) 
             num_points_added = 0;
+            [QLast, ~] = borl.select_action(state_visits{horizon+1,1});
             for t=1:1:horizon
                 R = 0;
                 for i=t:1:horizon
                     R = R + borl.gamma_^(i-t)*state_visits{i,3}; % Monte-Carlo Q value estimates
                 end
-                 
+                R = R + QLast;
+                
                 % sample Q from the bootstrapped
                 muQ = borl.muQ_bootstrapped(state_visits{t,1}, state_visits{t,2});
                 sigmaQ = borl.sigmaQ_bootstrapped(state_visits{t,1}, state_visits{t,2});
-
-                if (abs(R - muQ) > 10*sigmaQ)
+               
+                if (abs(R - muQ) > 500*sigmaQ)
                     % Add point in the mismatch GP
                     num_points_added = num_points_added + 1;
                     x = [state_visits{t,1}', state_visits{t,2}'];
@@ -108,40 +113,47 @@ classdef BORLAlg1 < handle
             end 
             borl.KQ_mismatch_inv_times_yQ = borl.KQ_mismatch_inv*borl.yQ_mismatch;
         end
-        
-        function a = select_action(borl, state)
+         
+        function [q, a] = select_action(borl, state)
            % Use bootstrapped + mismatch GP to pick an action
-           num_a_to_sample = 10;
+           num_a_to_sample = 20;
            actions_sampled = repmat(borl.actions(:,1),1,num_a_to_sample) ...
                + rand(size(borl.actions,1), num_a_to_sample).*repmat((borl.actions(:,2) - borl.actions(:,1)),1,num_a_to_sample);
-           states_sampled = repmat(state,1,num_a_to_sample);
            
-           % Sample mismatch for each action
+           % Sample Q values for each action
            Q = zeros(num_a_to_sample,1);
+           
            for i=1:1:num_a_to_sample
-               Q(i,1) = borl.getQ(states_sampled(:,i), actions_sampled(:,i), 0);
+               Q(i,1) = borl.getQ(state, actions_sampled(:,i),0);
            end
-           [~,minA] = min(Q);
+           [minQ,minA] = min(Q);
            a = actions_sampled(:,minA);
+           q = minQ;
         end
         
         function Q = getQ(borl, state, action, justMu)
+           muQ = borl.muQ_bootstrapped(state, action);
+           sigmaQ = borl.sigmaQ_bootstrapped(state, action);
+           
            if (size(borl.xQ_mismatch,1)>1)
                k_mismatch = borl.kernel_mismatch(repmat([state', action'], size(borl.xQ_mismatch,1),1), borl.xQ_mismatch);
-               Q = borl.muQ_bootstrapped(state, action) + k_mismatch'*borl.KQ_mismatch_inv_times_yQ ...
-                    + (1-justMu)*(borl.sigmaQ_bootstrapped(state, action) + ...
-                       (borl.kernel_mismatch([state',action'],[state',action']) - k_mismatch'*borl.KQ_mismatch_inv*k_mismatch))*randn();
+               mismatchMu = k_mismatch'*borl.KQ_mismatch_inv_times_yQ;
+               
+               Q = muQ + mismatchMu + (1-justMu)*(sigmaQ + (borl.kernel_mismatch([state',action'],[state',action'])...
+                                                            - k_mismatch'*borl.KQ_mismatch_inv*k_mismatch))*randn();
            else
-               Q = borl.muQ_bootstrapped(state, action) + ...
-                        (1-justMu)*borl.sigmaQ_bootstrapped(state, action)*randn();   
+               Q = muQ + (1-justMu)*sigmaQ*randn();   
            end
         end
         
         function Qvariance = getQvariance(borl, state, action, justMismatch)
+            % Utility function, to monitor the variance in (bootstrapped + mismatch)/only mismatch GP
+            
+            [~, sigmaQ] = borl.musigmaQ_bootstrapped(state, action);
             k_mismatch = borl.kernel_mismatch(repmat([state', action'], size(borl.xQ_mismatch,1),1), borl.xQ_mismatch);
-            Qvariance = borl.sigmaQ_bootstrapped(state, action)*(1-justMismatch) + ...
+            Qvariance = sigmaQ*(1-justMismatch) + ...
                         (borl.kernel_mismatch([state',action'],[state',action']) - ...
-                        k_mismatch'*borl.KQ_mismatch_inv*k_mismatch)*justMismatch;
+                        k_mismatch'*borl.KQ_mismatch_inv*k_mismatch);
         end
     end
 end

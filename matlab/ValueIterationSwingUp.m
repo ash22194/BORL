@@ -147,7 +147,7 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
         policyNew = possibleActions(I);
         policyNew(goal_grid(1),goal_grid(2)) = 0;
         if (prod(prod(policy == policyNew))==1)
-            fprintf('Policy converged!\n')
+%             fprintf('Policy converged!\n')
 %             break;
         end
         policy = policyNew;
@@ -167,7 +167,7 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
     %% Test policy
     if (test_policy)
 %         start = start';
-        tspan = [0,100];
+        tspan = [0,10];
         opts = odeset('RelTol',1e-8,'AbsTol',1e-8);
         [t,y] = ode45(@(t,y) gridBasedSwingUp(t,y,m,l,b,g,grid_x,grid_x_dot,policy,x_limits,x_dot_limits),tspan,start,opts);
         figure;

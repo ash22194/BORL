@@ -21,7 +21,7 @@ x_dot_limits = [-8,8]; % Choose limits and numpoints for x_dot such that goal x_
                        % i.e. x_dot_limits(1):dx_dot:x_dot_limits(2) has goal_x_dot
 Q = eye(2);
 u_limits = [-10,10];
-R = 0.1;
+R = 0.2;
 gtol = 0.0001;
 goal = [pi;0]; 
 start = [0;0];
@@ -29,7 +29,7 @@ gamma_ = 1;
 maxiter = 500;
 max_policy_iter = 30;
 visualize = false;
-test_policy = false;
+test_policy = true;
 
 %% Compute policy using value iteration
 [p, V] = ValueIterationSwingUp(mass_factor*m, length_factor*l, b, g, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
@@ -62,8 +62,22 @@ states = [reshape(grid_x,size(grid_x,1)*size(grid_x,2),1), reshape(grid_x_dot,si
 actions = [u_limits(1):du:u_limits(2)]';
 
 %-- Test learned policy on target environment --%
-% continuous_time_dynamics = @(t,y) gridBasedSwingUp(t,y,mass_factor*m,length_factor*l,b,g,grid_x,grid_x_dot,p_init,x_limits,x_dot_limits);
+continuous_time_dynamics = @(t,y) gridBasedSwingUp(t,y,mass_factor*m,length_factor*l,b,g,grid_x,grid_x_dot,p_init,x_limits,x_dot_limits);
 % swingUpRunPolicy(continuous_time_dynamics, start, goal, [0,30], strcat('Vanilla Policy, M Factor:',num2str(mass_factor),', L Factor:',num2str(length_factor)))
+num_starts_to_sample = 10;
+start_poses = repmat([x_limits(1),x_dot_limits(1)],num_starts_to_sample,1)...
+             + (repmat([x_limits(2) - x_limits(1), x_dot_limits(2) - x_dot_limits(1)],num_starts_to_sample,1)...
+                .*rand(num_starts_to_sample,size(states,2)));
+opts = odeset('RelTol',1e-8,'AbsTol',1e-8);
+mean_error_vanilla = 0;
+fprintf('Testing vanilla policy...');
+for t_=1:1:num_starts_to_sample
+    start_ = start_poses(t_,:)';
+    [~,y] = ode45(@(t,y) continuous_time_dynamics(t,y), [0,30], start_, opts);
+    mean_error_vanilla = mean_error_vanilla + sum((y(end,:)' - goal).^2,1);
+    t_
+end
+mean_error_vanilla = mean_error_vanilla/num_starts_to_sample;
 %-- --%
 
 env = pendulum(m, l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
@@ -78,7 +92,7 @@ Q_init = buildQFunction(states, actions, dynamics, reward, V_interpolant, gamma_
 
 state_grid(:,:,1) = grid_x;
 state_grid(:,:,2) = grid_x_dot;
-sigma_l = [du];
+sigma_l = [sqrt(du)];
 sigma_n = 10^(-2);
 sigma_f = 1;
 QKernel = SqExpKernel(actions, sigma_l, sigma_n, sigma_f);
@@ -87,33 +101,48 @@ muQ_bootstrapped = @(s,a) muQ(reshape(Q_init, numPointsx, numPointsx_dot, numPoi
 sigmaQ_bootstrapped = @(s,a) sigmaQ(actions, s, a, QKernel);
 
 env1 = pendulum(mass_factor*m, length_factor*l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-sigma_s = [0.2*dt; 0.2];
-sigma_a = [0.1];
+sigma_s = sqrt([dx; dx_dot]);
+sigma_a = [sqrt(du)];
 num_episodes = 50;
 horizon = 50;
 debug_ = true;
 
 borl = BORLAlg1(env1, u_limits, gamma_, sigma_s, sigma_a, muQ_bootstrapped, sigmaQ_bootstrapped);
 borl.train(num_episodes, horizon, debug_)
+
+% Get policy from the learned Q function
 Q_borl = zeros(size(states,1),1);
 Q_variance = zeros(size(states,1),1);
 num_actions_to_sample = 10;
 actions_sampled = u_limits(1) + (u_limits(2) - u_limits(1))*rand(num_actions_to_sample,1);
-policy_borl = zeros(size(states),size(actions,2));
+policy_borl = zeros(size(states,1),size(actions,2));
 for s=1:1:size(states,1)
     Qa = zeros(size(actions_sampled,1),1);
+    Qs = zeros(size(actions_sampled,1),1);
     for a=1:1:size(actions_sampled,1)
         Qa(a,1) = borl.getQ(states(s,:)',actions_sampled(a,:)', 1);
+        Qs(a,1) = borl.getQvariance(states(s,:)', actions_sampled(a,:), 1);
     end
     [Q_borl(s,1), minA] = min(Qa);
-    Q_variance(s,1) = borl.getQvariance(states(s,:)', actions_sampled(minA,:), 1);
+    [Q_variance(s,1),~] = max(Qs);
     policy_borl(s,:) = actions_sampled(minA,:);
     s
 end
+
 %-- Test final policy --%
 continuous_time_dynamics = @(t,y) gridBasedSwingUp(t,y,mass_factor*m,length_factor*l,b,g,grid_x,grid_x_dot,...
     reshape(policy_borl,numPointsx,numPointsx_dot),x_limits,x_dot_limits);
-swingUpRunPolicy(continuous_time_dynamics, start, goal, [0,10], strcat('Final Policy, M Factor:',num2str(mass_factor),', L Factor:',num2str(length_factor)));
+% swingUpRunPolicy(continuous_time_dynamics, start, goal, [0,100], strcat('Final Policy, M Factor:',num2str(mass_factor),', L Factor:',num2str(length_factor)));
+mean_error_final = 0;
+fprintf('Testing final policy...');
+for t_=1:1:num_starts_to_sample
+    start_ = start_poses(t_,:)';
+    [~,y] = ode45(@(t,y) continuous_time_dynamics(t,y), [0,30], start_, opts);
+    mean_error_final = mean_error_final + sum((y(end,:)' - goal).^2,1);
+    t_
+end
+mean_error_final = mean_error_final/num_starts_to_sample;
+fprintf(strcat('Vanilla Policy Error:',num2str(mean_error_vanilla),' ,Final Policy Error:',num2str(mean_error_final),'\n'));
 %-- --%
 
 set(0,'CurrentFigure',valueFig);
