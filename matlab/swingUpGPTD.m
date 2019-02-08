@@ -29,7 +29,7 @@ visualize = false;
 test_policy = false;
 
 %% Compute policy using value iteration
-[p, V] = ValueIterationSwingUp(numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
+[p, V] = ValueIterationSwingUp(m, l, b, 9.81, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
                                Q, R, goal', start', gamma_, gtol, dt, maxiter, max_policy_iter, visualize, test_policy);
 
 imagesc(V);
