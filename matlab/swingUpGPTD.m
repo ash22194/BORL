@@ -3,8 +3,11 @@ close all;
 clc;
 
 %% Parameters
-m = 1;
-dt = 0.1;
+m = 1; mass_factor = 2;
+l = 1; length_factor = 1;
+b = 0.5;
+g = 9.81;
+dt = 0.001;
 numPointsx = 51;
 numPointsx_dot = 51;
 numPointsu = 21;
@@ -22,17 +25,19 @@ R = 1;
 gtol = 0.001;
 goal = [pi;0]; 
 start = [0;0];
-gamma_ = 1;
+gamma_ = 0.99;
 maxiter = 30;
 max_policy_iter = 30;
 visualize = false;
 test_policy = false;
 
 %% Compute policy using value iteration
-[p, V] = ValueIterationSwingUp(numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
+[p, V] = ValueIterationSwingUp(m, l, b, g, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
                                Q, R, goal', start', gamma_, gtol, dt, maxiter, max_policy_iter, visualize, test_policy);
 
-imagesc(V);
+x = [x_limits(1), x_limits(2)];
+y = [x_dot_limits(1), x_dot_limits(2)];
+imagesc(x,y, V);
 xlabel('theta'); ylabel('theta-dot');
 title('Value Iteration');
 colorbar;
@@ -46,13 +51,13 @@ p_ = @(s) policy(p, grid_x, grid_x_dot, s);
 % nu = min(dx,dx_dot);
 nu = 0;
 sigma0 = 0;
-sigmak = sqrt(0.2);
-env = pendulum(m, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
+sigmak = sqrt(1);
+env = pendulum(m, l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
 gptd = GPTD(env, nu, sigma0, sigmak, gamma_);
-max_episode_length = 50;
-number_of_episodes = 500;
+max_episode_length = 100;
+number_of_episodes = 5000;
 debug_ = true;
-gptd.build_posterior(p_, number_of_episodes, max_episode_length, debug_);
+gptd.build_posterior_monte_carlo(p_, number_of_episodes, max_episode_length, debug_);
 gptd.visualize(grid_x,grid_x_dot);
 hold on;
 scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
