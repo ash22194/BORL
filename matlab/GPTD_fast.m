@@ -1,4 +1,4 @@
-classdef GPTD < handle
+classdef GPTD_fast < handle
 
     properties (SetAccess='private')
         env
@@ -17,7 +17,7 @@ classdef GPTD < handle
     end
     
     methods
-        function gptd = GPTD(env, nu, sigma0, sigmak, gamma_)
+        function gptd = GPTD_fast(env, nu, sigma0, sigmak, gamma_)
             gptd.env = env;
             gptd.nu = nu;
             gptd.sigma0 = sigma0;
@@ -63,7 +63,7 @@ classdef GPTD < handle
                 K_t(:,1) = gptd.kernel_vector(xt_1);
                 K_t(:,2) = gptd.kernel_vector(xt);
                 K_t_inv = inv(K_t);
-                At = sparse(eye(2));
+                at = [0;1];
                 H_t = sparse([1,-gamma_]);
                 Q_t = sparse([1/(H_t*K_t*H_t' + gptd.sigma0^2)]);
                 alpha_t = H_t'*Q_t*r;
@@ -73,51 +73,38 @@ classdef GPTD < handle
                 K_t_1_inv = gptd.K_inv;
                 alpha_t_1 = gptd.alpha_;
                 C_t_1 = gptd.C_;
-                Q_t_1 = gptd.Q_;
-                At_1 = gptd.A;
-                H_t_1 = gptd.H_;
+                at_1 = gptd.A;
                 
                 k_t_1 = gptd.kernel_vector(xt_1);
                 k_t = gptd.kernel_vector(xt);
                 ktt = gptd.kernel(xt,xt);
-                at_1 = K_t_1_inv*k_t_1;
                 at = K_t_1_inv*k_t;
                 et = ktt - k_t'*at;
                 
                 delk_t_1 = k_t_1 - gamma_*k_t;
-                gt = Q_t_1*H_t_1*delk_t_1;
                 
                 if ((et - gptd.nu) > 10^(-4))
                     gptd.D(:,size(gptd.D,2)+1) = xt;
-                    % Dimension issues
-                    c_t = H_t_1'*gt - at_1;
-                    %
-                    delktt = at_1'*(delk_t_1 - gamma_*k_t) + gamma_^2*ktt;
-                    s_t = gptd.sigma0^2 + delktt - delk_t_1'*C_t_1*delk_t_1;
-
                     K_t = [K_t_1,k_t;k_t',ktt]; 
                     
                     K_t_inv = [K_t_1_inv+1/et*(at*at'), -at/et; -at'/et, 1/et];
                     
+                    at = zeros(size(at,1)+1,1);
+                    
+                    % Dimension issues
+                    c_t = C_t_1*delk_t_1 - at_1;
+                    %
+                    
+                    delktt = at_1'*(delk_t_1 - gamma_*k_t) + gamma_^2*ktt;
+                    s_t = gptd.sigma0^2 + delktt - delk_t_1'*C_t_1*delk_t_1;
+
                     alpha_t = [alpha_t_1 + c_t/s_t*(delk_t_1'*alpha_t_1-r); gamma_/s_t*(delk_t_1'*alpha_t_1-r)];
                     
                     C_t = [C_t_1 + 1/s_t*(c_t*c_t'), gamma_/s_t*c_t; gamma_/s_t*c_t', gamma_^2/s_t];
                     
-                    Q_t = [Q_t_1 + 1/s_t*(gt*gt'), -gt/s_t; -gt'/s_t, 1/s_t];
-
-                    At = At_1;
-                    At(size(At_1,1)+1,size(At_1,2)+1) = 1;
-                    
-                    H_t = H_t_1;
-                    H_t(size(H_t_1,1)+1,size(H_t_1,2)+1) = -gamma_;
-                    H_t(size(H_t_1,1)+1,1:size(H_t_1,2)) = at_1';
-                    
                 else
-%                     if (~any(gptd.D==xt) && (gptd.env.state_count(xt) > 0))
-%                         disp(strcat('Why should it be excluded? ',int2str(xt),', error ',string(et)));
-%                     end
                     h_t = at_1 - gamma_*at;
-                    ct = H_t_1'*gt - h_t;
+                    ct = C_t_1*delk_t_1 - h_t;
                     st = gptd.sigma0^2 - ct'*delk_t_1;
 
                     K_t = K_t_1;
@@ -127,12 +114,6 @@ classdef GPTD < handle
 
                     C_t = C_t_1 + 1/st*(ct*ct');
 
-                    Q_t = [Q_t_1 + 1/st*(gt*gt'), -gt/st; -gt'/st, 1/st]; 
-
-                    At = [At_1;at'];
-
-                    H_t = [H_t_1; h_t'];
-                    
                 end
             end
             if (any(isnan(alpha_t)))
@@ -143,9 +124,7 @@ classdef GPTD < handle
             gptd.K_inv = K_t_inv;
             gptd.alpha_ = alpha_t;
             gptd.C_ = C_t;
-            gptd.Q_ = Q_t;
-            gptd.A = At;
-            gptd.H_ = H_t;
+            gptd.A = at;
         end
 
         function build_posterior_monte_carlo(gptd, policy, num_episodes, max_episode_length, debug_)
