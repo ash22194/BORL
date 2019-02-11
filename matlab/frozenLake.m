@@ -6,6 +6,7 @@ classdef frozenLake < handle
     num_states
     num_actions
     is_slippery
+    twoD_state
     starts
     holes
 	goal
@@ -14,13 +15,14 @@ classdef frozenLake < handle
 	end
 	
 	methods 
-		function f = frozenLake(map, num_actions, is_slippery)
+		function f = frozenLake(map, num_actions, is_slippery, twoD_state)
 			f.map = map;
             f.map_x = size(map,2);
             f.map_y = size(map,1);
             f.num_states = f.map_x*f.map_y;
             f.num_actions = num_actions;
             f.is_slippery = is_slippery;
+            f.twoD_state = twoD_state;
             f.starts = find(map=='S');
             f.goal = find(map=='G');
             f.holes = find(map=='H');
@@ -74,8 +76,11 @@ classdef frozenLake < handle
 %             r_= -0.02;
             r_ = 0;
             if (~isempty(find(f.holes==index,1)) || ~isempty(find(f.goal==index,1)))
-                s_ = index;
+                if (~f.twoD_state)
+                    s_ = index;
+                end
                 is_goal = true;
+                f.state_count(index,1) = f.state_count(index,1) + 1; 
             else
                 if (~isempty(find(f.holes==index_,1)))
                     r_ = -1;
@@ -84,10 +89,12 @@ classdef frozenLake < handle
                     r_ = 1;
                     is_goal = true;
                 end
+                if (~f.twoD_state)
+                    s_ = index_;
+                end
                 f.s = s_;
-                s_ = index_;
+                f.state_count(index_,1) = f.state_count(index_,1) + 1; 
             end
-            f.state_count(s_,1) = f.state_count(s_,1) + 1; 
 		end
 
 		function s = reset(f)
@@ -103,8 +110,10 @@ classdef frozenLake < handle
             s(1) = ceil(index/f.map_y);
             s(2) = index - (s(1)-1)*f.map_y;
             f.s = s;
-            s = index;
-            f.state_count(s,1) = f.state_count(s,1) + 1; 
+            f.state_count(index,1) = f.state_count(index,1) + 1; 
+            if (~f.twoD_state)
+                s = index;
+            end
         end
         
         function is_terminal = set(f,s)
