@@ -1,31 +1,37 @@
-classdef GPTD_fast < handle
+classdef GPTD_lookahead < handle
 
     properties (SetAccess='private')
         env
+        env_sim
         nu
         gamma_
         sigma0
         sigmak
+        kernel_steps
         D
         A
         H_
         Q_
+        K_
         K_inv
         alpha_
         C_
     end
     
     methods
-        function gptd = GPTD_fast(env, nu, sigma0, sigmak, gamma_)
+        function gptd = GPTD_lookahead(env, env_sim, nu, sigma0, sigmak, gamma_)
             gptd.env = env;
+            gptd.env_sim = env_sim;
             gptd.nu = nu;
             gptd.sigma0 = sigma0;
             gptd.sigmak = sigmak;
             gptd.gamma_ = gamma_;
+            gptd.kernel_steps = 5;
             gptd.D = [];
             gptd.A = [];
             gptd.H_ = [];
             gptd.Q_ = [];
+            gptd.K_ = [];
             gptd.K_inv = [];
             gptd.alpha_ = [];
             gptd.C_ = [];
@@ -47,7 +53,7 @@ classdef GPTD_fast < handle
             k_ = sparse(gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))');
         end
         
-        function update(gptd, xt, xt_1, r, gamma_)
+        function update(gptd, xt, xt_1, r, policy, gamma_)
             if (size(xt,1)==1)
                 xt=xt';
             end
@@ -55,12 +61,30 @@ classdef GPTD_fast < handle
                 xt_1=xt_1';
             end
             
+            trajt = zeros(size(xt,1)*gptd.kernel_steps,1);
+            trajt(1:size(xt,1),:) = xt;
+            x_ = xt;
+            gptd.env_sim.set(x_);
+            for i=1:1:gptd.kernel_steps
+                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
+                trajt(i*size(xt,1)+1:(i + 1)*size(xt,1),:) = x_; 
+            end
+            
+            trajt_1 = zeros(size(xt_1,1)*gptd.kernel_steps,1);
+            trajt_1(1:size(xt_1,1),:) = xt_1;
+            x_ = xt_1;
+            gptd.env_sim.set(x_);
+            for i=1:1:gptd.kernel_steps
+                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
+                trajt_1(i*size(xt_1,1)+1:(i + 1)*size(xt_1,1),:) = x_;
+            end
+
             if isempty(gptd.D)
-                gptd.D(:,1) = xt_1;
-                gptd.D(:,2) = xt;
+                gptd.D(:,1) = trajt_1;
+                gptd.D(:,2) = trajt;
                 K_t = sparse(zeros(2,2));
-                K_t(:,1) = gptd.kernel_vector(xt_1);
-                K_t(:,2) = gptd.kernel_vector(xt);
+                K_t(:,1) = gptd.kernel_vector(trajt_1);
+                K_t(:,2) = gptd.kernel_vector(trajt);
                 gptd.K_inv = inv(K_t);
                 gptd.A = [0;1];
                 H_t = sparse([1,-gamma_]);
@@ -69,16 +93,16 @@ classdef GPTD_fast < handle
                 gptd.C_ = H_t'*Q_t*H_t;
             else
                 
-                k_t_1 = gptd.kernel_vector(xt_1);
-                k_t = gptd.kernel_vector(xt);
-                ktt = gptd.kernel(xt,xt);
+                k_t_1 = gptd.kernel_vector(trajt_1);
+                k_t = gptd.kernel_vector(trajt);
+                ktt = gptd.kernel(trajt,trajt);
                 at = gptd.K_inv*k_t;
                 et = ktt - k_t'*at;
                 
                 delk_t_1 = k_t_1 - gamma_*k_t;
                 
                 if ((et - gptd.nu) > 10^(-4))
-                    gptd.D(:,size(gptd.D,2)+1) = xt;
+                    gptd.D(:,size(gptd.D,2)+1) = trajt;
                     
                     gptd.K_inv = [gptd.K_inv + 1/et*(at*at'), -at/et; -at'/et, 1/et];
                     
@@ -122,14 +146,14 @@ classdef GPTD_fast < handle
                     num_steps = num_steps + 1;
                     a = policy(s);
                     [s_, r, is_terminal] = gptd.env.step(a);
-                    gptd.update(s_, s, r, gptd.gamma_);
+                    gptd.update(s_, s, r, policy, gptd.gamma_);
                     s = s_;
                 end
                 s_ = gptd.env.reset();
                 if (size(gptd.D,2)>gptd.env.num_states)
                     disp('Check dictionary size');
                 end
-                gptd.update(s_, s, 0, 0);
+                gptd.update(s_, s, 0, policy, 0);
                 s = s_;
                 if (debug_)
                     disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,2))));
@@ -146,7 +170,7 @@ classdef GPTD_fast < handle
                     num_steps = num_steps + 1;
                     a = policy(s);
                     [s_, r, is_terminal] = gptd.env.step(a);
-                    gptd.update(s_, s, r, gptd.gamma_);
+                    gptd.update(s_, s, r, policy, gptd.gamma_);
                     s = s_;
                 end
                 s_ = start_states(:,1+mod(e,size(start_states,2)));
@@ -154,7 +178,7 @@ classdef GPTD_fast < handle
                 if (size(gptd.D,2)>gptd.env.num_states)
                     disp('Check dictionary size');
                 end
-                gptd.update(s_, s, 0, 0);
+                gptd.update(s_, s, 0, policy, 0);
                 s = s_;
                 if (debug_)
                     disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,2))));

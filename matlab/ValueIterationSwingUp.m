@@ -167,7 +167,7 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
     %% Test policy
     if (test_policy)
 %         start = start';
-        tspan = [0,10];
+        tspan = [0,200];
         opts = odeset('RelTol',1e-8,'AbsTol',1e-8);
         [t,y] = ode45(@(t,y) gridBasedSwingUp(t,y,m,l,b,g,grid_x,grid_x_dot,policy,x_limits,x_dot_limits),tspan,start,opts);
         figure;

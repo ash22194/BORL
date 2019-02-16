@@ -7,14 +7,13 @@ classdef GPSARSA < handle
         epsilon
         nu
         gamma_
+        is_reward
         sigma_s
         sigma_a
         sigma0
         D
         A
         H_
-        % Q_
-        K_
         K_inv
         alpha_
         C_
@@ -24,7 +23,7 @@ classdef GPSARSA < handle
     end
     
     methods
-        function gpsarsa = GPSARSA(env, actions, discra, epsilon, nu, sigma_s, sigma_a, sigma0, gamma_)
+        function gpsarsa = GPSARSA(env, actions, discra, epsilon, nu, sigma_s, sigma_a, sigma0, gamma_, is_reward)
             gpsarsa.env = env;
             gpsarsa.actions = actions;
             gpsarsa.discra = discra;
@@ -34,12 +33,11 @@ classdef GPSARSA < handle
             gpsarsa.sigma_s = sigma_s;
             gpsarsa.sigma_a = sigma_a;
             gpsarsa.gamma_ = gamma_;
+            gpsarsa.is_reward = is_reward;
             
             gpsarsa.D = [];
             gpsarsa.A = [];
             gpsarsa.H_ = [];
-            % gpsarsa.Q_ = [];
-            gpsarsa.K_ = [];
             gpsarsa.K_inv = [];
             gpsarsa.alpha_ = [];
             gpsarsa.C_ = [];
@@ -93,7 +91,6 @@ classdef GPSARSA < handle
                 xt_1=xt_1';
             end
 
-            K_t_1 = gpsarsa.K_;
             K_t_1_inv = gpsarsa.K_inv;
             alpha_t_1 = gpsarsa.alpha_;
             C_t_1 = gpsarsa.C_;
@@ -115,11 +112,11 @@ classdef GPSARSA < handle
                 gpsarsa.D(:,size(gpsarsa.D,2)+1) = [xt; actiont];
                 
                 % Online GPTD
-                K_t = [K_t_1,k_t;k_t',ktt]; 
                     
                 K_t_inv = [K_t_1_inv+1/et*(at*at'), -at/et; -at'/et, 1/et];
 
                 at = zeros(size(at,1)+1,1);
+                at(end,1) = 1;
 
                 % Dimension issues
                 c_t = C_t_1*delk_t_1 - at_1;
@@ -159,7 +156,6 @@ classdef GPSARSA < handle
                 ct = C_t_1*delk_t_1 - h_t;
                 st = gpsarsa.sigma0^2 - ct'*delk_t_1;
 
-                K_t = K_t_1;
                 K_t_inv = K_t_1_inv;
 
                 alpha_t = alpha_t_1 + ct/st*(delk_t_1'*alpha_t_1 - r);
@@ -193,7 +189,6 @@ classdef GPSARSA < handle
                 disp('Check alpha!');
             end
             
-            gpsarsa.K_ = K_t;
             gpsarsa.K_inv = K_t_inv;
             gpsarsa.alpha_ = alpha_t;
             gpsarsa.C_ = C_t;
@@ -222,19 +217,66 @@ classdef GPSARSA < handle
                 for a=1:num_actions_to_sample
                     Q(a) = gpsarsa.alpha_'*gpsarsa.kernel_vector(s, actions_sampled(:,a));
                 end
-                [q,a] = min(Q);
+                if (gpsarsa.is_reward)
+                    [q,a] = max(Q);
+                else
+                    [q,a] = min(Q);
+                end
                 a = actions_sampled(:,a);
             else
                 a = actions_sampled(:,randperm(size(actions_sampled,2),1));
-                q = 0;
+                if (size(gpsarsa.D,1)>0)
+                    q = gpsarsa.alpha_'*gpsarsa.kernel_vector(s,a);
+                else
+                    q = 0;
+                end
             end
             
         end
         
         
-        function build_policy_monte_carlo(gpsarsa, num_episodes, max_episode_length, debug_)
+        function build_policy_monte_carlo(gpsarsa, num_episodes, max_episode_length, epsilon_end, debug_)
             state = gpsarsa.env.reset();
             [~,a] = gpsarsa.select_action(state, gpsarsa.epsilon);
+            
+            if (isempty(gpsarsa.D))
+                gpsarsa.D = [state; a];
+                gpsarsa.K_inv = 1/gpsarsa.kernel_s(state, state)*gpsarsa.kernel_a(a, a);
+                gpsarsa.A = 1;
+                gpsarsa.alpha_ = 0;
+                gpsarsa.C_ = 0;
+                % Original GPSARSA
+%                 gpsarsa.c_ = 0;
+%                 gpsarsa.d = 0;
+%                 gpsarsa.s = inf;
+            end
+            
+            for e=1:1:num_episodes
+                is_terminal = false;
+                num_steps = 0;
+                epsi = gpsarsa.epsilon + (epsilon_end - gpsarsa.epsilon)/num_episodes*e;
+                while ((~is_terminal) && (num_steps < max_episode_length))
+                    num_steps = num_steps + 1;
+                    [state_, r, is_terminal] = gpsarsa.env.step(a);
+                    [~, a_] = gpsarsa.select_action(state_, epsi);
+                    gpsarsa.update(state_, a_, state, a, r, gpsarsa.gamma_);
+                    state = state_;
+                    a = a_;
+                end
+                state_ = gpsarsa.env.reset();
+                [~, a_] = gpsarsa.select_action(state_, epsi);
+                gpsarsa.update(state_, a_, state, a, 0, 0);
+                state = state_;
+                if (debug_)
+                    disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gpsarsa.D,2))));
+                end
+            end
+        end
+        
+        function build_policy_monte_carlo_fixed_starts(gpsarsa, start_states, num_episodes, max_episode_length, epsilon_end, debug_)
+            state = start_states(:,1);
+            [~,a] = gpsarsa.select_action(state, gpsarsa.epsilon);
+            is_terminal = gpsarsa.env.set(state);
             
             if (isempty(gpsarsa.D))
                 gpsarsa.D = [state; a];
@@ -243,27 +285,26 @@ classdef GPSARSA < handle
                 gpsarsa.A = 1;
                 gpsarsa.alpha_ = 0;
                 gpsarsa.C_ = 0;
-                gpsarsa.c_ = 0;
-                gpsarsa.d = 0;
-                gpsarsa.s = inf;
+                % Original GPSARSA
+%                 gpsarsa.c_ = 0;
+%                 gpsarsa.d = 0;
+%                 gpsarsa.s = inf;
             end
             
             for e=1:1:num_episodes
-                is_terminal = false;
                 num_steps = 0;
+                epsi = gpsarsa.epsilon + (epsilon_end - gpsarsa.epsilon)/num_episodes*e;
                 while ((~is_terminal) && (num_steps < max_episode_length))
                     num_steps = num_steps + 1;
                     [state_, r, is_terminal] = gpsarsa.env.step(a);
-                    [~, a_] = gpsarsa.select_action(state_, gpsarsa.epsilon);
+                    [~, a_] = gpsarsa.select_action(state_, epsi);
                     gpsarsa.update(state_, a_, state, a, r, gpsarsa.gamma_);
                     state = state_;
                     a = a_;
                 end
-                state_ = gpsarsa.env.reset();
-                [~, a_] = gpsarsa.select_action(state_, gpsarsa.epsilon);
-                if (size(gpsarsa.D,2)>(gpsarsa.env.num_states*gpsarsa.env.num_actions))
-                    disp('Check dictionary size');
-                end
+                state_ = start_states(:,1+mod(e,size(start_states,2)));
+                [~, a_] = gpsarsa.select_action(state_, epsi);
+                is_terminal = gpsarsa.env.set(state_);
                 gpsarsa.update(state_, a_, state, a, 0, 0);
                 state = state_;
                 if (debug_)

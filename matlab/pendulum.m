@@ -66,10 +66,24 @@ classdef pendulum < handle
 		end
 
 		function x = reset(p)
-			x = zeros(2,1);
-			x(1) = p.x_limits(1) + (p.x_limits(2) - p.x_limits(1))*rand();
-			x(2) = p.x_dot_limits(1) + (p.x_dot_limits(2) - p.x_dot_limits(1))*rand();
-			p.x = x;
+            x = zeros(2,1);
+            x(1) = p.x_limits(1) + (p.x_limits(2) - p.x_limits(1))*rand();
+            x(2) = p.x_dot_limits(1) + (p.x_dot_limits(2) - p.x_dot_limits(1))*rand();
+            p.x = x;
+        end
+        
+        function is_terminal = set(p, s)
+            s_ = zeros(2,1);
+            s_(1) = s(1);
+            s_(2) = s(2);
+            p.x = s_;
+            
+            is_terminal = false;
+            dx = (p.x_limits(2)-p.x_limits(1))/(p.num_points_x - 1); 
+    		dx_dot = (p.x_dot_limits(2)-p.x_dot_limits(1))/(p.num_points_x_dot - 1);
+    		if (abs(p.goal(1) - p.x(1))<dx && abs(p.goal(2)-p.x(2))<dx_dot)
+    			is_terminal = true;
+    		end
         end
         
         function [s_, is_goal] = dynamics(p, s, a)
