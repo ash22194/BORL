@@ -186,18 +186,25 @@ classdef GPTD_lookahead < handle
             end
         end
                 
-        function V = get_value_function(gptd, states)
+        function V = get_value_function(gptd, states, policy)
             V = zeros(size(states,2),1);
             for i=1:1:size(states,2)
                 s = states(:,i);
-                V(i) = gptd.kernel_vector(s)'*gptd.alpha_;
+                gptd.env_sim.set(s);
+                traj = zeros(size(s,1)*gptd.kernel_steps,1);
+                traj(1:size(s,1),:) = s;
+                for j=1:1:gptd.kernel_steps
+                    [s, ~, ~] = gptd.env_sim.step(policy(s));
+                    traj(j*size(s,1)+1:(j+1)*size(s,1),:) = s;
+                end
+                V(i) = gptd.kernel_vector(traj)'*gptd.alpha_;
             end
         end
         
-        function visualize(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
+        function visualize(gptd, policy, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
             states = [reshape(grid_x,size(grid_x,1)*size(grid_x_dot,2),1),...
                       reshape(grid_x_dot,size(grid_x,1)*size(grid_x_dot,2),1)]';
-            V = gptd.get_value_function(states);
+            V = gptd.get_value_function(states, policy);
             figure;
             x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
             y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
