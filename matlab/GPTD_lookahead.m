@@ -65,7 +65,7 @@ classdef GPTD_lookahead < handle
             trajt(1:size(xt,1),:) = xt;
             x_ = xt;
             gptd.env_sim.set(x_);
-            for i=1:1:gptd.kernel_steps
+            for i=1:1:(gptd.kernel_steps-1)
                 [x_, ~, ~] = gptd.env_sim.step(policy(x_));
                 trajt(i*size(xt,1)+1:(i + 1)*size(xt,1),:) = x_; 
             end
@@ -74,7 +74,7 @@ classdef GPTD_lookahead < handle
             trajt_1(1:size(xt_1,1),:) = xt_1;
             x_ = xt_1;
             gptd.env_sim.set(x_);
-            for i=1:1:gptd.kernel_steps
+            for i=1:1:(gptd.kernel_steps-1)
                 [x_, ~, ~] = gptd.env_sim.step(policy(x_));
                 trajt_1(i*size(xt_1,1)+1:(i + 1)*size(xt_1,1),:) = x_;
             end
@@ -193,7 +193,7 @@ classdef GPTD_lookahead < handle
                 gptd.env_sim.set(s);
                 traj = zeros(size(s,1)*gptd.kernel_steps,1);
                 traj(1:size(s,1),:) = s;
-                for j=1:1:gptd.kernel_steps
+                for j=1:1:(gptd.kernel_steps-1)
                     [s, ~, ~] = gptd.env_sim.step(policy(s));
                     traj(j*size(s,1)+1:(j+1)*size(s,1),:) = s;
                 end
