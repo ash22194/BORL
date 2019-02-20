@@ -44,17 +44,39 @@ title('Target');
 colorbar;
 pause(0.5);
 
+%% Compute policy using value iteration for bootstrapping
+[p_bootstrapped, V_bootstrapped] = ValueIterationSwingUp(m, l, b, g, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
+                               Q, R, goal', start', gamma_, gtol, dt, maxiter, max_policy_iter, visualize, test_policy);
+
+x = [x_limits(1), x_limits(2)];
+y = [x_dot_limits(1), x_dot_limits(2)];
+figure;
+imagesc(x, y, V_bootstrapped');
+xlabel('theta'); ylabel('theta-dot');
+title('Target');
+colorbar;
+pause(0.5);
+
 %% Build GP based estimate of value function using the computed policy
 dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
 dx_dot = (x_dot_limits(2)-x_dot_limits(1))/(numPointsx_dot - 1);
 [grid_x,grid_x_dot] = ndgrid(x_limits(1):dx:x_limits(2),x_dot_limits(1):dx_dot:x_dot_limits(2));
-p_ = @(s) policy(p, grid_x, grid_x_dot, s);
+p_target = @(s) policy(p, grid_x, grid_x_dot, s);
+
+env = pendulum(m*mass_factor, l*length_factor, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
+dynamics = @(s,a)env.dynamics(s,a);
+reward = @(s_,a)env.cost(s_,a);
+states = [reshape(grid_x,size(grid_x,1)*size(grid_x,2),1), reshape(grid_x_dot,size(grid_x_dot,1)*size(grid_x_dot,2),1)];
+actions = [u_limits(1):du:u_limits(2)]';
+
+V_interpolant = @(s) interpn(grid_x, grid_x_dot, reshape(V_bootstrapped, numPointsx, numPointsx_dot), s(:,1), s(:,2));
+Q_bootstrapped = buildQFunction(states, actions, dynamics, reward, V_interpolant, gamma_);
+
 % nu = min(dx,dx_dot);
 nu = exp(-1)-0.15;
 sigma0 = 0.02;
 sigmak = min(dx,dx_dot);
-env = pendulum(m, l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-gptd = GPTD_fast(env, nu, sigma0, sigmak, gamma_);
+gptd = GPTD_bootstrapped(env, Q_bootstrapped, nu, sigma0, sigmak, gamma_);
 states = [reshape(grid_x,1,numPointsx*numPointsx_dot);...
           reshape(grid_x_dot,1,numPointsx*numPointsx_dot)];
 max_episode_length = 100;
@@ -65,32 +87,5 @@ gptd.visualize(grid_x,grid_x_dot);
 % hold on;
 % scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
 % hold off;
-
-%% %% Build GP based estimate of value function using the computed policy and lookahead kernel
-dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
-dx_dot = (x_dot_limits(2)-x_dot_limits(1))/(numPointsx_dot - 1);
-[grid_x,grid_x_dot] = ndgrid(x_limits(1):dx:x_limits(2),x_dot_limits(1):dx_dot:x_dot_limits(2));
-p_ = @(s) policy(p, grid_x, grid_x_dot, s);
-% nu = min(dx,dx_dot);
-nu = (exp(-0.2)-0.15);
-sigma0 = 0.02;
-sigmak = min(dx,dx_dot);
-env2 = pendulum(m, l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-env_sim = pendulum(m, l, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-gptd_l = GPTD_lookahead(env2, env_sim, nu, sigma0, sigmak, gamma_);
-states = [reshape(grid_x,1,numPointsx*numPointsx_dot);...
-          reshape(grid_x_dot,1,numPointsx*numPointsx_dot)];
-max_episode_length = 100;
-number_of_episodes = 1000;
-debug_ = true;
-gptd_l.build_posterior_monte_carlo_fixed_starts(p_, states, number_of_episodes, max_episode_length, debug_);
-gptd_l.visualize(p_, grid_x,grid_x_dot);
-% hold on;
-% scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
-% hold off;
-
-function a = policy(p, grid_x, grid_x_dot, s)
-  a = interpn(grid_x, grid_x_dot, p, s(1), s(2));
-end
 
             
