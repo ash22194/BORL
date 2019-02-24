@@ -79,12 +79,12 @@ classdef GPSARSA_lookahead < handle
             if (size(x,1)==1)
                 x = x';
             end
-            if (((size(x,1) + size(a,1))~=size(gpsarsa.D,1) && size(gpsarsa.D,1)>0) || size(x,2)~=1)
+            if ((size(gpsarsa.D,1)>0) && size(x,2)~=1)
                 disp('Check dimension');
                 return;
             end
             k_ = sparse(gpsarsa.kernel_s(gpsarsa.D(1:size(x,1),:),repmat(x,1,size(gpsarsa.D,2))).*...
-                        gpsarsa.kernel_a(gpsarsa.D(size(x,1)+1:end,:),repmat(a,1,size(gpsarsa.D,2))));
+                        gpsarsa.kernel_a(gpsarsa.D(size(x,1)+1:size(x,1)+size(a,1),:),repmat(a,1,size(gpsarsa.D,2))));
         end
         
         function k_ = kernel_traj_vector(gpsarsa, x)
@@ -114,22 +114,22 @@ classdef GPSARSA_lookahead < handle
             trajt = zeros(state_dim*gpsarsa.kernel_steps,1);
             trajt(1:state_dim,:) = [xt; actiont];
             x_ = xt;
-            [~,a_] = gpsarsa.select_action(x_, 0);
+            a_ = actiont;
             gpsarsa.env_sim.set(x_);
             for i=1:1:(gpsarsa.kernel_steps-1)
                 [x_, ~, ~] = gpsarsa.env_sim.step(a_);
-                [~,a_] = gpsarsa.select_action(x_, 0);
+                [~,a_] = gpsarsa.select_action_myopic(x_, 0);
                 trajt(i*state_dim+1:(i + 1)*state_dim,:) = [x_; a_]; 
             end
             
             trajt_1 = zeros(state_dim*gpsarsa.kernel_steps,1);
             trajt_1(1:state_dim,:) = [xt_1; actiont_1];
             x_ = xt_1;
-            [~,a_] = gpsarsa.select_action(x_, 0);
+            a_ = actiont_1;
             gpsarsa.env_sim.set(x_);
             for i=1:1:(gpsarsa.kernel_steps-1)
                 [x_, ~, ~] = gpsarsa.env_sim.step(a_);
-                [~,a_] = gpsarsa.select_action(x_, 0);
+                [~,a_] = gpsarsa.select_action_myopic(x_, 0);
                 trajt_1(i*state_dim+1:(i + 1)*state_dim,:) = [x_; a_];
             end
 
@@ -223,6 +223,40 @@ classdef GPSARSA_lookahead < handle
             end
         end
         
+        function [q, a] = select_action_myopic(gpsarsa, s, epsilon)
+            if (~gpsarsa.discra)
+                num_actions_to_sample = 20;
+                actions_sampled = repmat(gpsarsa.actions(:,1),1,num_actions_to_sample) + ...
+                    (gpsarsa.actions(:,2) - gpsarsa.actions(:,1))*rand(size(gpsarsa.actions,1), num_actions_to_sample);
+            else
+                num_actions_to_sample = size(gpsarsa.actions, 2);
+                actions_sampled = gpsarsa.actions;
+            end
+            
+            explore = rand();
+            
+            if (size(gpsarsa.D,1)>0 && explore>=epsilon)
+                Q = zeros(num_actions_to_sample,1);
+                for a=1:num_actions_to_sample
+                    %%% Pick actions based on the first state in the stored trajectories %%%
+                    Q(a) = gpsarsa.alpha_'*gpsarsa.kernel_vector(s, actions_sampled(:,a));
+                    %%%
+                end
+                if (gpsarsa.is_reward)
+                    [q,a] = max(Q);
+                else
+                    [q,a] = min(Q);
+                end
+                a = actions_sampled(:,a);
+            else
+                a = actions_sampled(:,randperm(size(actions_sampled,2),1));
+                if (size(gpsarsa.D,1)>0)
+                    q = gpsarsa.alpha_'*gpsarsa.kernel_vector(s,a);
+                else
+                    q = 0;
+                end
+            end 
+        end
         
         function [q, a] = select_action(gpsarsa, s, epsilon)
             if (~gpsarsa.discra)
@@ -235,13 +269,23 @@ classdef GPSARSA_lookahead < handle
             end
             
             explore = rand();
+            state_dim = size(s,1) + size(actions_sampled,1);
             
             if (size(gpsarsa.D,1)>0 && explore>=epsilon)
                 Q = zeros(num_actions_to_sample,1);
                 for a=1:num_actions_to_sample
-                    %%% How to pick actions? %%%
-                    Q(a) = gpsarsa.alpha_'*gpsarsa.kernel_vector(s, actions_sampled(:,a));
-                    %%%
+                    x_ = s;
+                    a_ = a;
+                    traj = zeros(state_dim*gpsarsa.kernel_steps,1);
+                    traj(1:state_dim,:) = [x_; a_];
+                    gpsarsa.env_sim.set(x_);
+                    for i=1:1:(gpsarsa.kernel_steps-1)
+                        [x_, ~, ~] = gpsarsa.env_sim.step(a_);
+                        [~,a_] = gpsarsa.select_action_myopic(x_, 0);
+                        traj(i*state_dim+1:(i + 1)*state_dim,:) = [x_; a_];
+                    end
+                    
+                    Q(a) = gpsarsa.alpha_'*gpsarsa.kernel_traj_vector(traj);
                 end
                 if (gpsarsa.is_reward)
                     [q,a] = max(Q);
@@ -263,18 +307,18 @@ classdef GPSARSA_lookahead < handle
         
         function build_policy_monte_carlo(gpsarsa, num_episodes, max_episode_length, epsilon_end, debug_)
             state = gpsarsa.env.reset();
-            [~,a] = gpsarsa.select_action(state, gpsarsa.epsilon);
+            [~, a] = gpsarsa.select_action(state, gpsarsa.epsilon);
             
             if (isempty(gpsarsa.D))
                 state_dim = (size(state,1) + size(a,1));
                 traj = zeros(state_dim*gpsarsa.kernel_steps,1);
                 traj(1:state_dim,:) = [state; a];
                 x_ = state;
-                [~, a_] = gpsarsa.select_action(x_, 0);
+                a_ = a;
                 gpsarsa.env_sim.set(x_);
                 for i=1:1:(gpsarsa.kernel_steps-1)
                     [x_, ~, ~] = gpsarsa.env_sim.step(a_);
-                    [~, a_] = gpsarsa.select_action(x_, 0);
+                    [~, a_] = gpsarsa.select_action_myopic(x_, 0);
                     traj(i*state_dim+1:(i + 1)*state_dim,:) = [x_; a_]; 
                 end
                 gpsarsa.D = traj;
@@ -321,11 +365,11 @@ classdef GPSARSA_lookahead < handle
                 traj = zeros(state_dim*gpsarsa.kernel_steps,1);
                 traj(1:state_dim,:) = [state; a];
                 x_ = state;
-                [~, a_] = gpsarsa.select_action(x_, 0);
+                a_ = a;
                 gpsarsa.env_sim.set(x_);
                 for i=1:1:(gpsarsa.kernel_steps-1)
                     [x_, ~, ~] = gpsarsa.env_sim.step(a_);
-                    [~, a_] = gpsarsa.select_action(x_, 0);
+                    [~, a_] = gpsarsa.select_action_myopic(x_, 0);
                     traj(i*state_dim+1:(i + 1)*state_dim,:) = [x_; a_]; 
                 end
                 gpsarsa.D = traj;

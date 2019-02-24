@@ -29,31 +29,31 @@ gamma_ = 0.99;
 maxiter = 300;
 max_policy_iter = 30;
 visualize = false;
-test_policy = true;
+test_policy = false;
 
 %% Compute policy using value iteration
 [p, V] = ValueIterationSwingUp(m*mass_factor, l*length_factor, b, g, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
                                Q, R, goal', start', gamma_, gtol, dt, maxiter, max_policy_iter, visualize, test_policy);
 
+valueFig = figure();
+subplot(4,1,1);
 x = [x_limits(1), x_limits(2)];
 y = [x_dot_limits(1), x_dot_limits(2)];
-figure;
 imagesc(x, y, V');
 xlabel('theta'); ylabel('theta-dot');
 title('Target');
 colorbar;
 pause(0.5);
 
-%% Compute policy using value iteration for bootstrapping
+%% Compute value function for bootstrapping
 [p_bootstrapped, V_bootstrapped] = ValueIterationSwingUp(m, l, b, g, numPointsx, numPointsx_dot, numPointsu, x_limits, x_dot_limits, u_limits,...
                                Q, R, goal', start', gamma_, gtol, dt, maxiter, max_policy_iter, visualize, test_policy);
 
-x = [x_limits(1), x_limits(2)];
-y = [x_dot_limits(1), x_dot_limits(2)];
-figure;
+set(0,'CurrentFigure',valueFig);
+subplot(4,1,2);
 imagesc(x, y, V_bootstrapped');
 xlabel('theta'); ylabel('theta-dot');
-title('Target');
+title('Starting point');
 colorbar;
 pause(0.5);
 
@@ -67,25 +67,41 @@ env = pendulum(m*mass_factor, l*length_factor, b, g, dt, x_limits, numPointsx, x
 dynamics = @(s,a)env.dynamics(s,a);
 reward = @(s_,a)env.cost(s_,a);
 states = [reshape(grid_x,size(grid_x,1)*size(grid_x,2),1), reshape(grid_x_dot,size(grid_x_dot,1)*size(grid_x_dot,2),1)];
-actions = [u_limits(1):du:u_limits(2)]';
 
-V_interpolant = @(s) interpn(grid_x, grid_x_dot, reshape(V_bootstrapped, numPointsx, numPointsx_dot), s(:,1), s(:,2));
-Q_bootstrapped = buildQFunction(states, actions, dynamics, reward, V_interpolant, gamma_);
+V_interpolant = @(s) interpn(grid_x, grid_x_dot, reshape(V_bootstrapped, numPointsx, numPointsx_dot), s(1,:)', s(2,:)');
 
 % nu = min(dx,dx_dot);
 nu = exp(-1)-0.15;
 sigma0 = 0.02;
 sigmak = min(dx,dx_dot);
-gptd = GPTD_bootstrapped(env, Q_bootstrapped, nu, sigma0, sigmak, gamma_);
-states = [reshape(grid_x,1,numPointsx*numPointsx_dot);...
-          reshape(grid_x_dot,1,numPointsx*numPointsx_dot)];
+gptd_b = GPTD_bootstrapped(env, V_interpolant, nu, sigma0, sigmak, gamma_);
 max_episode_length = 100;
-number_of_episodes = 1000;
+number_of_episodes = 1500;
 debug_ = true;
-gptd.build_posterior_monte_carlo_fixed_starts(p_, states, number_of_episodes, max_episode_length, debug_);
-gptd.visualize(grid_x,grid_x_dot);
-% hold on;
-% scatter(gptd.D(1,:),gptd.D(2,:),'MarkerFaceColor',[1 0 0],'LineWidth',1.5);
-% hold off;
+gptd_b.build_posterior_monte_carlo_fixed_starts(p_target, states', number_of_episodes, max_episode_length, debug_);
+V_b = gptd_b.get_value_function(states');
 
+set(0,'CurrentFigure',valueFig);
+subplot(4,1,3);
+imagesc(x, y, reshape(V_b,size(grid_x,1),size(grid_x_dot,2))');
+xlabel('theta'); ylabel('theta-dot');
+title('Bootstrapped GPTD');
+colorbar;
+
+%% Vanilla GPTD
+
+gptd = GPTD_fast(env, nu, sigma0, sigmak, gamma_);
+gptd.build_posterior_monte_carlo_fixed_starts(p_target, states', number_of_episodes, max_episode_length, debug_);
+V_gptd = gptd.get_value_function(states');
+
+set(0,'CurrentFigure',valueFig);
+subplot(4,1,4);
+imagesc(x, y, reshape(V_gptd,size(grid_x,1),size(grid_x_dot,2))');
+xlabel('theta'); ylabel('theta-dot');
+title('Vanilla GPTD');
+colorbar;
+
+function a = policy(p, grid_x, grid_x_dot, s)
+  a = interpn(grid_x, grid_x_dot, p, s(1), s(2));
+end
             

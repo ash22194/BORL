@@ -2,7 +2,7 @@ classdef GPTD_bootstrapped < handle
 
     properties (SetAccess='private')
         env
-        Q_bootstrapped
+        V_bootstrapped
         nu
         gamma_
         sigma0
@@ -17,9 +17,9 @@ classdef GPTD_bootstrapped < handle
     end
     
     methods
-        function gptd = GPTD_bootstrapped(env, Q_bootstrapped, nu, sigma0, sigmak, gamma_)
+        function gptd = GPTD_bootstrapped(env, V_bootstrapped, nu, sigma0, sigmak, gamma_)
             gptd.env = env;
-            gptd.Q_bootstrapped = Q_bootstrapped;
+            gptd.V_bootstrapped = V_bootstrapped;
             gptd.nu = nu;
             gptd.sigma0 = sigma0;
             gptd.sigmak = sigmak;
@@ -94,7 +94,7 @@ classdef GPTD_bootstrapped < handle
                     gptd.alpha_ = [gptd.alpha_ + c_t/s_t*(delk_t_1'*gptd.alpha_-r); gamma_/s_t*(delk_t_1'*gptd.alpha_-r)];
                     
                     gptd.C_ = [gptd.C_ + 1/s_t*(c_t*c_t'), gamma_/s_t*c_t; gamma_/s_t*c_t', gamma_^2/s_t];
-                    
+                     
                     gptd.A = zeros(size(at,1)+1,1);
                     gptd.A(end,1) = 1;
                     
@@ -165,23 +165,28 @@ classdef GPTD_bootstrapped < handle
         end
                 
         function V = get_value_function(gptd, states)
+            V_ = zeros(size(gptd.D,2),1);
+            for i=1:1:size(gptd.D,2)
+                V_(i,1) = gptd.V_bootstrapped(gptd.D(:,i));
+            end
+            
             V = zeros(size(states,2),1);
             for i=1:1:size(states,2)
                 s = states(:,i);
-                V(i) = gptd.kernel_vector(s)'*gptd.alpha_;
+                V(i,1) = gptd.V_bootstrapped(s) + gptd.kernel_vector(s)'*(gptd.alpha_ - gptd.C_*V_);
             end
         end
         
         function visualize(gptd, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
-            states = [reshape(grid_x,size(grid_x,1)*size(grid_x_dot,2),1),...
-                      reshape(grid_x_dot,size(grid_x,1)*size(grid_x_dot,2),1)]';
+            states = [reshape(grid_x, size(grid_x,1)*size(grid_x_dot,2),1),...
+                      reshape(grid_x_dot, size(grid_x,1)*size(grid_x_dot,2),1)]';
             V = gptd.get_value_function(states);
             figure;
             x = [gptd.env.x_limits(1), gptd.env.x_limits(2)];
             y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
             imagesc(x,y,reshape(V,size(grid_x,1),size(grid_x_dot,2))');
             xlabel('theta'); ylabel('theta-dot');
-            title('GPTD Value function');
+            title('GPTD-Bootstrapped Value function');
             colorbar;
         end
     end
