@@ -26,7 +26,7 @@ classdef GPTD_lookahead < handle
             gptd.sigma0 = sigma0;
             gptd.sigmak = sigmak;
             gptd.gamma_ = gamma_;
-            gptd.kernel_steps = 5;
+            gptd.kernel_steps = 40;
             gptd.D = [];
             gptd.A = [];
             gptd.H_ = [];
@@ -39,7 +39,13 @@ classdef GPTD_lookahead < handle
         
         function k = kernel(gptd,x,y)
             % x,y are nx1 inputs that represent states
-            k = exp(-sum((x-y).^2,1)/(2*gptd.sigmak^2));
+%             k = exp(-sum((x-y).^2,1)/(2*gptd.kernel_steps*gptd.sigmak^2));
+            k = exp(-sum(((x-y)./repmat(gptd.sigmak,1,size(x,2))).^2,1)/2);
+        end
+        
+        function k = kernel_frechet(gptd,x,y)
+            % x,y are nxkernel_steps inputs that represent state trajectories
+            k = reshape(exp(-max(sum((x-y).^2, 1), [], 2)/(2*gptd.sigmak^2)), size(x,3), 1);
         end
         
         function k_ = kernel_vector(gptd,x)
@@ -53,6 +59,14 @@ classdef GPTD_lookahead < handle
             k_ = sparse(gptd.kernel(gptd.D,repmat(x,1,size(gptd.D,2)))');
         end
         
+        function k_ = kernel_vector_frechet(gptd,x)
+            if (size(x,2)~=gptd.kernel_steps || size(x,1)~=size(gptd.D,1))
+                disp('Check dimension');
+                return;
+            end
+            k_ = sparse(gptd.kernel_frechet(gptd.D,repmat(x,1,1,size(gptd.D,3))));
+        end
+        
         function update(gptd, xt, xt_1, r, policy, gamma_)
             if (size(xt,1)==1)
                 xt=xt';
@@ -61,23 +75,29 @@ classdef GPTD_lookahead < handle
                 xt_1=xt_1';
             end
             
-            trajt = zeros(size(xt,1)*gptd.kernel_steps,1);
-            trajt(1:size(xt,1),:) = xt;
+%             trajt = zeros(size(xt,1)*gptd.kernel_steps,1);
+%             trajt(1:size(xt,1),:) = xt;
+            rt = 0;
             x_ = xt;
             gptd.env_sim.set(x_);
             for i=1:1:(gptd.kernel_steps-1)
-                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
-                trajt(i*size(xt,1)+1:(i + 1)*size(xt,1),:) = x_; 
+                [x_, r, ~] = gptd.env_sim.step(policy(x_));
+                rt = rt + gptd.gamma_^(i-1)*r;
+%                 trajt(i*size(xt,1)+1:(i + 1)*size(xt,1),:) = x_; 
             end
+            trajt = [xt;rt];
             
-            trajt_1 = zeros(size(xt_1,1)*gptd.kernel_steps,1);
-            trajt_1(1:size(xt_1,1),:) = xt_1;
+%             trajt_1 = zeros(size(xt_1,1)*gptd.kernel_steps,1);
+%             trajt_1(1:size(xt_1,1),:) = xt_1;
+            rt_1 = 0;
             x_ = xt_1;
             gptd.env_sim.set(x_);
             for i=1:1:(gptd.kernel_steps-1)
-                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
-                trajt_1(i*size(xt_1,1)+1:(i + 1)*size(xt_1,1),:) = x_;
+                [x_, r, ~] = gptd.env_sim.step(policy(x_));
+                rt_1 = rt_1 + gptd.gamma_^(i-1)*r;
+%                 trajt_1(i*size(xt_1,1)+1:(i + 1)*size(xt_1,1),:) = x_;
             end
+            trajt_1 = [xt_1;rt_1];
 
             if isempty(gptd.D)
                 gptd.D(:,1) = trajt_1;
@@ -136,7 +156,91 @@ classdef GPTD_lookahead < handle
                 disp('Check alpha!');
             end
         end
+        
+        function update_frechet(gptd, xt, xt_1, r, policy, gamma_)
+            if (size(xt,1)==1)
+                xt=xt';
+            end
+            if (size(xt_1,1)==1)
+                xt_1=xt_1';
+            end
+            
+            trajt = zeros(size(xt,1),gptd.kernel_steps);
+            trajt(:,1) = xt;
+            x_ = xt;
+            gptd.env_sim.set(x_);
+            for i=1:1:(gptd.kernel_steps-1)
+                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
+                trajt(:,i+1) = x_; 
+            end
+            
+            trajt_1 = zeros(size(xt_1,1),gptd.kernel_steps);
+            trajt_1(:,1) = xt_1;
+            x_ = xt_1;
+            gptd.env_sim.set(x_);
+            for i=1:1:(gptd.kernel_steps-1)
+                [x_, ~, ~] = gptd.env_sim.step(policy(x_));
+                trajt_1(:,i+1) = x_;
+            end
 
+            if isempty(gptd.D)
+                gptd.D(:,:,1) = trajt_1;
+                gptd.D(:,:,2) = trajt;
+                K_t = sparse(zeros(2,2));
+                K_t(:,1) = gptd.kernel_vector_frechet(trajt_1);
+                K_t(:,2) = gptd.kernel_vector_frechet(trajt);
+                gptd.K_inv = inv(K_t);
+                gptd.A = [0;1];
+                H_t = sparse([1,-gamma_]);
+                Q_t = sparse([1/(H_t*K_t*H_t' + gptd.sigma0^2)]);
+                gptd.alpha_ = H_t'*Q_t*r;
+                gptd.C_ = H_t'*Q_t*H_t;
+            else
+                
+                k_t_1 = gptd.kernel_vector_frechet(trajt_1);
+                k_t = gptd.kernel_vector_frechet(trajt);
+                ktt = gptd.kernel_frechet(trajt,trajt);
+                at = gptd.K_inv*k_t;
+                et = ktt - k_t'*at;
+                
+                delk_t_1 = k_t_1 - gamma_*k_t;
+                
+                if ((et - gptd.nu) > 10^(-4))
+                    gptd.D(:,:,size(gptd.D,3)+1) = trajt;
+                    
+                    gptd.K_inv = [gptd.K_inv + 1/et*(at*at'), -at/et; -at'/et, 1/et];
+                    
+                    % Dimension issues
+                    c_t = gptd.C_*delk_t_1 - gptd.A;
+                    %
+                    
+                    delktt = gptd.A'*(delk_t_1 - gamma_*k_t) + gamma_^2*ktt;
+                    s_t = gptd.sigma0^2 + delktt - delk_t_1'*gptd.C_*delk_t_1;
+
+                    gptd.alpha_ = [gptd.alpha_ + c_t/s_t*(delk_t_1'*gptd.alpha_-r); gamma_/s_t*(delk_t_1'*gptd.alpha_-r)];
+                    
+                    gptd.C_ = [gptd.C_ + 1/s_t*(c_t*c_t'), gamma_/s_t*c_t; gamma_/s_t*c_t', gamma_^2/s_t];
+                    
+                    gptd.A = zeros(size(at,1)+1,1);
+                    gptd.A(end,1) = 1;
+                    
+                else
+                    h_t = gptd.A - gamma_*at;
+                    ct = gptd.C_*delk_t_1 - h_t;
+                    st = gptd.sigma0^2 - ct'*delk_t_1;
+
+                    gptd.alpha_ = gptd.alpha_ + ct/st*(delk_t_1'*gptd.alpha_ - r);
+
+                    gptd.C_ = gptd.C_ + 1/st*(ct*ct');
+                    
+                    gptd.A = at;
+                end
+            end
+            if (any(isnan(gptd.alpha_)))
+                disp('Check alpha!');
+            end
+        end
+        
         function build_posterior_monte_carlo(gptd, policy, num_episodes, max_episode_length, debug_)
             s = gptd.env.reset();
             for e=1:1:num_episodes
@@ -147,6 +251,7 @@ classdef GPTD_lookahead < handle
                     a = policy(s);
                     [s_, r, is_terminal] = gptd.env.step(a);
                     gptd.update(s_, s, r, policy, gptd.gamma_);
+%                     gptd.update_frechet(s_, s, r, policy, gptd.gamma_);
                     s = s_;
                 end
                 s_ = gptd.env.reset();
@@ -154,9 +259,11 @@ classdef GPTD_lookahead < handle
                     disp('Check dictionary size');
                 end
                 gptd.update(s_, s, 0, policy, 0);
+%                 gptd.update_frechet(s_, s, 0, policy, 0);
                 s = s_;
                 if (debug_)
                     disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,2))));
+%                     disp(strcat('Episode : ',int2str(e),', Dictionary size : ',int2str(size(gptd.D,3))));
                 end
             end
         end
@@ -191,16 +298,34 @@ classdef GPTD_lookahead < handle
             for i=1:1:size(states,2)
                 s = states(:,i);
                 gptd.env_sim.set(s);
-                traj = zeros(size(s,1)*gptd.kernel_steps,1);
-                traj(1:size(s,1),:) = s;
+                r_ = 0;
+%                 traj = zeros(size(s,1)*gptd.kernel_steps,1);
+%                 traj(1:size(s,1),:) = s;
                 for j=1:1:(gptd.kernel_steps-1)
-                    [s, ~, ~] = gptd.env_sim.step(policy(s));
-                    traj(j*size(s,1)+1:(j+1)*size(s,1),:) = s;
+                    [s, r, ~] = gptd.env_sim.step(policy(s));
+                    r_ = r_ + gptd.gamma_^(j-1)*r;
+%                     traj(j*size(s,1)+1:(j+1)*size(s,1),:) = s;
                 end
+                traj = [s;r_];
                 V(i) = gptd.kernel_vector(traj)'*gptd.alpha_;
             end
         end
-        
+
+        function V = get_value_function_frechet(gptd, states, policy)
+            V = zeros(size(states,2),1);
+            for i=1:1:size(states,2)
+                s = states(:,i);
+                gptd.env_sim.set(s);
+                traj = zeros(size(s,1), gptd.kernel_steps);
+                traj(:,1) = s;
+                for j=1:1:(gptd.kernel_steps-1)
+                    [s, ~, ~] = gptd.env_sim.step(policy(s));
+                    traj(:,j+1) = s;
+                end
+                V(i) = gptd.kernel_vector_frechet(traj)'*gptd.alpha_;
+            end
+        end
+
         function visualize(gptd, policy, grid_x, grid_x_dot) % Assuming a 2D state-space... Make it general?
             states = [reshape(grid_x,size(grid_x,1)*size(grid_x_dot,2),1),...
                       reshape(grid_x_dot,size(grid_x,1)*size(grid_x_dot,2),1)]';
@@ -210,7 +335,7 @@ classdef GPTD_lookahead < handle
             y = [gptd.env.x_dot_limits(1), gptd.env.x_dot_limits(2)];
             imagesc(x,y,reshape(V,size(grid_x,1),size(grid_x_dot,2))');
             xlabel('theta'); ylabel('theta-dot');
-            title('GPTD Value function');
+            title('GPTD Lookahead Value function');
             colorbar;
         end
     end

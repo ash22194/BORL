@@ -60,7 +60,8 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
         iter = iter + 1;
         policy_iter = 0;
         G = 10*ones(size(grid_x,1),size(grid_x_dot,2));
-        while ((max(max(abs(G_ - G))) > gtol) && (policy_iter < max_policy_iter))
+%         while ((max(max(abs(G_ - G))) > gtol) && (policy_iter < max_policy_iter))
+        while ((policy_iter < max_policy_iter))
             % Iterate to estimate value function
             % Euler integration
             G = G_;
@@ -146,10 +147,10 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
         [~,I] = min(possibleG,[],3);
         policyNew = possibleActions(I);
         policyNew(goal_grid(1),goal_grid(2)) = 0;
-        if (prod(prod(policy == policyNew))==1)
+%         if (prod(prod(policy == policyNew))==1)
 %             fprintf('Policy converged!\n')
 %             break;
-        end
+%         end
         policy = policyNew;
         if (visualize)
             imagesc([x_limits(1),x_limits(2)],[x_dot_limits(1),x_dot_limits(2)],policy);
@@ -162,12 +163,12 @@ function [policy, V] = ValueIterationSwingUp(m, l, b, g, numPointsx_, numPointsx
     end
 
     %% Return the value function
-    V = G;
+    V = G_;
     
     %% Test policy
     if (test_policy)
 %         start = start';
-        tspan = [0,200];
+        tspan = [0,100];
         opts = odeset('RelTol',1e-8,'AbsTol',1e-8);
         [t,y] = ode45(@(t,y) gridBasedSwingUp(t,y,m,l,b,g,grid_x,grid_x_dot,policy,x_limits,x_dot_limits),tspan,start,opts);
         figure;
