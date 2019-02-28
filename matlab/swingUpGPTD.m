@@ -7,9 +7,9 @@ m = 1; mass_factor = 2;
 l = 1; length_factor = 1;
 b = 0.5;
 g = 9.81;
-dt = 0.005;
-numPointsx = 51;
-numPointsx_dot = 31;
+dt = 0.001;
+numPointsx = 81;
+numPointsx_dot = 101;
 numPointsu = 51;
 x_limits = [0,2*pi];   % Don't change limits for x as the values are wrapped around when an 
                        % action takes the system beyond 2pi or below 0 and any other
@@ -17,16 +17,16 @@ x_limits = [0,2*pi];   % Don't change limits for x as the values are wrapped aro
                        % If you change numPointsx ensure that goal x is a
                        % point on the grid i.e. x_limits(1):dx:x_limits(1) has goal x
 
-x_dot_limits = [-2,2]; % Choose limits and numpoints for x_dot such that goal x_dot is a point on the grid 
+x_dot_limits = [-3,3]; % Choose limits and numpoints for x_dot such that goal x_dot is a point on the grid 
                        % i.e. x_dot_limits(1):dx_dot:x_dot_limits(2) has goal_x_dot
-Q = 10*eye(2);
-u_limits = [-9.7,9.7];
+Q = [25,0;0,0.01];
+u_limits = [-7.9,7.9];
 R = 0.01;
 gtol = 0.0001;
 goal = [pi;0]; 
 start = [0;0];
 gamma_ = 0.99;
-maxiter = 300;
+maxiter = 500;
 max_policy_iter = 30;
 visualize = false;
 test_policy = true;

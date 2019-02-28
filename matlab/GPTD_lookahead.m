@@ -26,7 +26,7 @@ classdef GPTD_lookahead < handle
             gptd.sigma0 = sigma0;
             gptd.sigmak = sigmak;
             gptd.gamma_ = gamma_;
-            gptd.kernel_steps = 40;
+            gptd.kernel_steps = 50;
             gptd.D = [];
             gptd.A = [];
             gptd.H_ = [];
