@@ -1,5 +1,5 @@
-clear;
 close all;
+clear;
 clc;
 
 %% Parameters
@@ -64,53 +64,33 @@ xlabel('theta')
 ylabel('theta-dot')
 title('Initial Difference')
 
-%% Build GP based estimate of value function using the computed policy
+%% Fit GP over the difference  - Using [theta, theta-dot] as "x" and difference in value function as "y"
+
+% Generate training data
 dx = (x_limits(2)-x_limits(1))/(numPointsx - 1); 
 dx_dot = (x_dot_limits(2)-x_dot_limits(1))/(numPointsx_dot - 1);
-[grid_x,grid_x_dot] = ndgrid(x_limits(1):dx:x_limits(2),x_dot_limits(1):dx_dot:x_dot_limits(2));
-p_target = @(s) policy(p, grid_x, grid_x_dot, s);
-p_init = @(s) policy(p_bootstrapped, grid_x, grid_x_dot, s);
+[grid_x, grid_x_dot] = ndgrid(x_limits(1):dx:x_limits(2), x_dot_limits(1):dx_dot:x_dot_limits(2));
 
-env = pendulum(m*mass_factor, l*length_factor, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-env_sim = pendulum(m*mass_factor, l*length_factor, b, g, dt, x_limits, numPointsx, x_dot_limits, numPointsx_dot, numPointsu, Q, R, goal);
-dynamics = @(s,a)env.dynamics(s,a);
-reward = @(s_,a)env.cost(s_,a);
-states = [reshape(grid_x,size(grid_x,1)*size(grid_x,2),1), reshape(grid_x_dot,size(grid_x_dot,1)*size(grid_x_dot,2),1)];
+num_train_points = 500;
+x_train = [x_limits(1) + rand(num_train_points,1)*(x_limits(2) - x_limits(1)),...
+           x_dot_limits(1) + rand(num_train_points,1)*(x_dot_limits(2) - x_dot_limits(1))];
+       
+y_train = interpn(grid_x, grid_x_dot, (V_bootstrapped - V), x_train(:,1), x_train(:,2));
 
-V_interpolant = @(s) interpn(grid_x, grid_x_dot, reshape(V_bootstrapped, numPointsx, numPointsx_dot), s(1,:)', s(2,:)');
-
-% nu = min(dx,dx_dot);
-nu = exp(-1)-0.1;
-sigma0 = 0.02;
-sigmak = [0.3208;    1.4675;    1.0951];
-% sigmak = [0.1];
-gptd_b = GPTD_episodic(env, env_sim, V_interpolant, nu, sigma0, sigmak, gamma_);
-max_episode_length = 100;
-number_of_episodes = 1500;
-debug_ = true;
-gptd_b.build_posterior_monte_carlo(p_target, p_target, number_of_episodes, max_episode_length, debug_);
-V_b = gptd_b.get_value_function(states', p_target);
+% Test data - Grid?
+x_query = [reshape(grid_x, numPointsx*numPointsx_dot, 1), reshape(grid_x_dot, numPointsx*numPointsx_dot, 1)];
+meanfunc = [];
+covfunc = @covSEard;
+likfunc = @likGauss; 
+hyp = struct('mean', [], 'cov', [0 0 0], 'lik', -1);
+hyp = minimize(hyp, @gp, -100, @infGaussLik, meanfunc, covfunc, likfunc, x_train, y_train);
+[mu sigm] = gp(hyp, @infGaussLik, meanfunc, covfunc, likfunc, x_train, y_train, x_query);
 
 set(0,'CurrentFigure',valueFig);
 subplot(4,1,4);
-imagesc(x, y, (reshape(V_b,size(grid_x,1),size(grid_x_dot,2)) - V)');
-xlabel('theta'); ylabel('theta-dot');
-title('Final Difference');
-colorbar;
+imagesc(x,y,reshape(mu, numPointsx, numPointsx_dot)'); colorbar;
+xlabel('theta')
+ylabel('theta-dot')
+title('GPFit Difference')
 
-%% Vanilla GPTD
 
-% gptd = GPTD_fast(env, nu, sigma0, sigmak, gamma_);
-% gptd.build_posterior_monte_carlo_fixed_starts(p_target, states', number_of_episodes, max_episode_length, debug_);
-% V_gptd = gptd.get_value_function(states');
-% 
-% set(0,'CurrentFigure',valueFig);
-% subplot(4,1,4);
-% imagesc(x, y, reshape(V_gptd,size(grid_x,1),size(grid_x_dot,2))');
-% xlabel('theta'); ylabel('theta-dot');
-% title('Vanilla GPTD');
-% colorbar;
-
-function a = policy(p, grid_x, grid_x_dot, s)
-  a = interpn(grid_x, grid_x_dot, p, s(1), s(2));
-end
