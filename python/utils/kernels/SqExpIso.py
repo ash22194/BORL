@@ -2,7 +2,7 @@ import numpy as np
 from numpy.linalg import norm
 from math import exp
 
-class GaussianKernel:
+class SqExpIso:
 	def __init__(self,sigma):
 		self.sigma = sigma
 
@@ -11,4 +11,4 @@ class GaussianKernel:
 		if (self.sigma==0):
 			return (x==y).all()
 
-		return exp(-norm(x-y)**2/self.sigma)
+		return (np.exp(-np.sum(np.power((x-y)/self.sigma, 2), axis=0)))[:,np.newaxis]
