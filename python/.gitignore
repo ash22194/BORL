@@ -1,6 +1,7 @@
 *.ipynb
 *.pyc
 .python-version
+__pycache__/
 build/
 dist/
-BORL.egg-info/
+BORL_python.egg-info/

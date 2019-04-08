@@ -2,11 +2,12 @@ from tqdm import trange
 import numpy as np 
 
 class GPSARSA:
-    def __init__(self, env, nu, sigma0, gamma, kernel, Q_mu=[]):
+    def __init__(self, env, nu, sigma0, gamma, epsilon, kernel, Q_mu=[]):
         
         self.env = env
         self.nu = nu
         self.gamma = gamma
+        self.epsilon = epsilon
         self.sigma0 = sigma0
         self.kernel = kernel.kernel
         if (not Q_mu):
@@ -43,7 +44,7 @@ class GPSARSA:
             k_t = self.k_(trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
-            et = (ktt - np.dot(k_t.T, at))[0,0]
+            et = (ktt - np.dot(k_t.T, at))
             delk_t_1 = k_t_1 - self.gamma*k_t
 
             if (et - self.nu) > 10**(-4):
@@ -52,7 +53,7 @@ class GPSARSA:
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
-                self.K_inv = np.concatenate((self.K_inv, np.concatenate((-at_by_et.T, np.array([[1/et]])), axis=1)), axis=0)
+                self.K_inv = np.concatenate((self.K_inv, np.concatenate((-at_by_et.T, 1/et), axis=1)), axis=0)
 
                 c_t = np.dot(self.C_, delk_t_1) - self.A
 
@@ -64,7 +65,7 @@ class GPSARSA:
 
                 gc_t_by_s_t = (self.gamma/s_t)*c_t
                 self.C_ = np.concatenate((self.C_ + np.dot(c_t, c_t.T)/s_t, gc_t_by_s_t), axis=1) 
-                self.C_ = np.concatenate((self.C_, np.concatenate((gc_t_by_s_t.T, np.array([[self.gamma**2/s_t]])), axis=1)), axis=0)
+                self.C_ = np.concatenate((self.C_, np.concatenate((gc_t_by_s_t.T, self.gamma**2/s_t), axis=1)), axis=0)
 
                 self.A = np.zeros((self.A.shape[0]+1, self.A.shape[1]))
                 self.A[-1, 0] = 1
@@ -91,7 +92,7 @@ class GPSARSA:
         Return action and corresponding Q value
         """
 
-        num_actions_to_sample = 10
+        num_actions_to_sample = 15
         actions = np.repeat(self.actions[:,0][:,np.newaxis], num_actions_to_sample, axis=1) +\
                   (np.random.rand(self.actions.shape[0], num_actions_to_sample) *\
                    np.repeat((self.actions[:,1] - self.actions[:,0])[:,np.newaxis], num_actions_to_sample, axis=1))
@@ -124,7 +125,7 @@ class GPSARSA:
         return Q, action
 
 
-    def build_policy_monte_carlo(self, num_episodes, max_episode_length, debug):
+    def build_policy_monte_carlo(self, num_episodes, max_episode_length):
         """
         """
 
@@ -144,7 +145,7 @@ class GPSARSA:
             
             while ((num_steps < max_episode_length) and (not is_terminal)):
                 num_steps+=1
-                state, reward, is_terminal, debug_info = self.env.step(action)
+                state, reward, is_terminal = self.env.step(action)
                 action = self.select_action(state, self.epsilon)
 
                 state_sequence[:, num_steps] = state
