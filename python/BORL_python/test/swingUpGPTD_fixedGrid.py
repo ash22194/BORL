@@ -4,7 +4,7 @@ from ipdb import set_trace
 from scipy.interpolate import interpn
 from BORL_python.env.pendulum import pendulum
 from BORL_python.value.ValueIteration import ValueIterationSwingUp
-from BORL_python.value.GPTD import GPTD
+from BORL_python.value.GPTD_fixedGrid import GPTD_fixedGrid
 from BORL_python.utils.kernels import SqExpArd
 
 def main():
@@ -73,7 +73,11 @@ def main():
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
 
-    gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu)
+    numElementsInD = 1500
+    D = np.concatenate((x_limits[0] + np.random.rand(1,numElementsInD)*(x_limits[-1] - x_limits[0]),\
+                x_dot_limits[0] + np.random.rand(1,numElementsInD)*(x_dot_limits[-1] - x_dot_limits[0])), axis=0)
+
+    gptd = GPTD_fixedGrid(environment_target, nu, sigma0, gamma, kernel, D, V_mu)
     print('GPTD.. ')
     gptd.build_posterior(p_target, num_episodes, max_episode_length)
     V_gptd = gptd.get_value_function(states)
@@ -99,6 +103,7 @@ def main():
     plt.colorbar()
     plt.savefig('GPTD.png')
     plt.show()
+    set_trace()
 
 if __name__=='__main__':
     main()

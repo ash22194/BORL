@@ -1,8 +1,8 @@
 from tqdm import trange
 import numpy as np
 
-class GPTD:
-    def __init__(self, env, nu, sigma0, gamma, kernel, V_mu=[]):
+class GPTD_fixedGrid:
+    def __init__(self, env, nu, sigma0, gamma, kernel, D, V_mu=[]):
         
         self.env = env
         self.nu = nu
@@ -10,14 +10,18 @@ class GPTD:
         self.sigma0 = sigma0
         self.kernel = kernel.kernel
         if (not V_mu):
-            V_mu = lambda s: np.zeros((s.shape[1],1))   
+            V_mu = lambda s: np.zeros((s.shape[1],1))
         self.V_mu = V_mu
-        self.D = np.array([[]])
-        self.A = np.array([[]])
-        self.V_D = np.array([[]])
-        self.K_inv = np.array([[]])
-        self.alpha_ = np.array([[]])
-        self.C_ = np.array([[]])
+        self.D = D
+        self.A = np.zeros((self.D.shape[1],1))
+        self.A[-1,0] = 1
+        self.V_D = self.V_mu(self.D)
+        K = np.zeros((self.D.shape[1], self.D.shape[1]))
+        for i in range(self.D.shape[1]):
+            K[:,i] = self.k_(self.D[:,i])[:,0]
+        self.K_inv = np.linalg.inv(K)
+        self.alpha_ = np.zeros((self.D.shape[1],1))
+        self.C_ = np.zeros((self.D.shape[1],self.D.shape[1]))
 
     def k_(self,x):
 
@@ -40,45 +44,17 @@ class GPTD:
             k_t = self.k_(trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
-            et = (ktt - np.dot(k_t.T, at))
             delk_t_1 = k_t_1 - self.gamma*k_t
 
-            if (et - self.nu) > 10**(-4):
-                self.D = np.concatenate((self.D, trajt), axis=1)
-                self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1])), axis=0)
+            ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
+            st = self.sigma0**2 - np.dot(ct.T, delk_t_1)
 
-                at_by_et = at/et
-                self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
-                self.K_inv = np.concatenate((self.K_inv, \
-                                             np.concatenate((-at_by_et.T, 1/et), axis=1)), axis=0)
+            diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
+            self.alpha_ = self.alpha_ + ct/st*diff_r
 
-                c_t = np.dot(self.C_, delk_t_1) - self.A
+            self.C_ = self.C_ + np.dot(ct, ct.T)/st
 
-                delktt = np.dot(self.A.T, delk_t_1 - self.gamma*k_t) + (self.gamma**2)*ktt
-                s_t = self.sigma0**2 + delktt - np.dot(delk_t_1.T, np.dot(self.C_, delk_t_1))
-
-                diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
-                self.alpha_ = np.concatenate((self.alpha_ + c_t/s_t*diff_r, self.gamma/s_t*diff_r), axis=0)
-
-                gc_t_by_s_t = (self.gamma/s_t)*c_t
-                self.C_ = np.concatenate((self.C_ + np.dot(c_t, c_t.T)/s_t, gc_t_by_s_t), axis=1) 
-                self.C_ = np.concatenate((self.C_, \
-                                          np.concatenate((gc_t_by_s_t.T, self.gamma**2/s_t), axis=1)), axis=0)
-
-                self.A = np.zeros((self.A.shape[0]+1, self.A.shape[1]))
-                self.A[-1, 0] = 1
-
-            else:
-
-                ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
-                st = self.sigma0**2 - np.dot(ct.T, delk_t_1)
-
-                diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
-                self.alpha_ = self.alpha_ + ct/st*diff_r
-
-                self.C_ = self.C_ + np.dot(ct, ct.T)/st
-
-                self.A = at
+            self.A = at
 
             assert (not np.isnan(self.alpha_).any()), "Check alpha for NaN values"
 
