@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from ipdb import set_trace
 from scipy.interpolate import interpn
 from BORL_python.env.pendulum import pendulum
 from BORL_python.value.ValueIteration import ValueIterationSwingUp
@@ -43,12 +42,14 @@ def main():
     u_grid = np.linspace(u_limits[0], u_limits[1], numPointsu)
     num_iterations = 400
 
-    # policy_target, V_target = ValueIterationSwingUp(environment_target, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
-    # policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
-    policy_start = np.zeros((numPointsx, numPointsx_dot))
-    policy_target = np.zeros((numPointsx, numPointsx_dot))
-    V_start = np.zeros((numPointsx, numPointsx_dot))
-    V_target = np.zeros((numPointsx, numPointsx_dot))
+    print('Value Iteration for target domain')
+    policy_target, V_target = ValueIterationSwingUp(environment_target, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
+    print('Value Iteration in simulation')
+    policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
+    # policy_start = np.zeros((numPointsx, numPointsx_dot))
+    # policy_target = np.zeros((numPointsx, numPointsx_dot))
+    # V_start = np.zeros((numPointsx, numPointsx_dot))
+    # V_target = np.zeros((numPointsx, numPointsx_dot))
 
     V_target = np.reshape(V_target, (numPointsx, numPointsx_dot))
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
@@ -59,12 +60,12 @@ def main():
     GPSARSA
     """
     sigma0 = 0.2
-    sigmaf = 7.6156
-    sigmal = np.array([[0.6345],[1.2656]])
-    nu = (sigmaf**2)*(np.exp(-1)-0.36)
+    sigmaf = 13.6596
+    sigmal = np.array([[0.5977],[1.9957],[5.7314]])
+    nu = (sigmaf**2)*(np.exp(-1)-0.34)
     epsilon = 0.1
     max_episode_length = 1000
-    num_episodes = 1000
+    num_episodes = 100
 
     kernel = SqExpArd(sigmal, sigmaf)
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
@@ -73,9 +74,10 @@ def main():
     V_mu = lambda s: interpn((x_grid, x_dot_grid), V_start, s.T)[0]
     Q_mu = buildQfromV(V_mu, environment, gamma, states, u_grid[np.newaxis,:]) # Q_mu is number_of_actions x number_of_states
     Q_mu = np.reshape(Q_mu.T, (numPointsx, numPointsx_dot, numPointsu))
-    Q_mu = lambda s,a: interpn((x_grid, x_dot_grid, u_grid), Q_mu, np.concatenate((s,a), axis=0).T)
+    Q_mu_ = lambda s,a: interpn((x_grid, x_dot_grid, u_grid), Q_mu, np.concatenate((s,a), axis=0).T)[:,np.newaxis]
 
-    gpsarsa = GPSARSA(environment_target, nu, sigma0, gamma, epsilon, kernel, Q_mu)
+    gpsarsa = GPSARSA_rewardBased(environment_target, u_limits[np.newaxis,:], nu, sigma0, gamma, epsilon, kernel, Q_mu_)
+    print('GPSARSA.. ')
     gpsarsa.build_policy_monte_carlo(num_episodes, max_episode_length)
     V_gpsarsa = gpsarsa.get_value_function(states)
     V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
@@ -84,7 +86,7 @@ def main():
     Results
     """
     plt.subplot(2,1,1)
-    plt.imshow(V_target.T, aspect='auto',\
+    plt.imshow(np.abs(V_target-V_start).T, aspect='auto',\
         extent=(x_limits[0], x_limits[1], x_dot_limits[1], x_dot_limits[0]), origin='upper')
     plt.ylabel('theta-dot')
     plt.xlabel('theta')
@@ -92,7 +94,7 @@ def main():
     plt.colorbar()
 
     plt.subplot(2,1,2)
-    plt.imshow(np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot)).T, aspect='auto',\
+    plt.imshow(np.abs(V_target - V_gpsarsa).T, aspect='auto',\
         extent=(x_limits[0], x_limits[1], x_dot_limits[1], x_dot_limits[0]), origin='upper')
     plt.ylabel('theta-dot')
     plt.xlabel('theta')

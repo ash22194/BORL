@@ -1,10 +1,11 @@
 from tqdm import trange
 import numpy as np 
-
+from ipdb import set_trace
 class GPSARSA:
-    def __init__(self, env, nu, sigma0, gamma, epsilon, kernel, Q_mu=[]):
+    def __init__(self, env, u_limits, nu, sigma0, gamma, epsilon, kernel, Q_mu=[]):
         
         self.env = env
+        self.actions = u_limits
         self.nu = nu
         self.gamma = gamma
         self.epsilon = epsilon
@@ -27,7 +28,7 @@ class GPSARSA:
             x = x[:,np.newaxis]
         assert len(x.shape)==2, "Check state dimensions"
 
-        return self.kernel(self.D, np.repeat(x, self.D.shape(1), axis=1))
+        return self.kernel(self.D, np.repeat(x, self.D.shape[1], axis=1))
 
     def update(self, state_sequence, action_sequence, reward_sequence):
         """
@@ -38,7 +39,6 @@ class GPSARSA:
         for i in range(reward_sequence.shape[0]):
             trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i]))[:,np.newaxis]
             trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1]))[:,np.newaxis]
-            qt = np.array([[self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])]])
 
             k_t_1 = self.k_(trajt_1)
             k_t = self.k_(trajt)
@@ -49,7 +49,7 @@ class GPSARSA:
 
             if (et - self.nu) > 10**(-4):
                 self.D = np.concatenate((self.D, trajt), axis=1)
-                self.Q_D = np.concatenate((self.Q_D, qt), axis=0)
+                self.Q_D = np.concatenate((self.Q_D, self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])), axis=0)
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
@@ -72,7 +72,7 @@ class GPSARSA:
 
             else:
 
-                ct = np.dot(self.C_, delk_t_1) - (self.A_ - self.gamma*at)
+                ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
                 st = self.sigma0**2 - np.dot(ct.T, delk_t_1)
 
                 diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
@@ -85,14 +85,14 @@ class GPSARSA:
             assert (not np.isnan(self.alpha_).any()), "Check alpha for NaN values"
 
         self.diff_alpha_CQ_D = self.alpha_ - np.dot(self.C_, self.Q_D)
-    
+
     def select_action(self, state, epsilon=0):
         """
         Select action epsilon-greedily
         Return action and corresponding Q value
         """
 
-        num_actions_to_sample = 15
+        num_actions_to_sample = 10
         actions = np.repeat(self.actions[:,0][:,np.newaxis], num_actions_to_sample, axis=1) +\
                   (np.random.rand(self.actions.shape[0], num_actions_to_sample) *\
                    np.repeat((self.actions[:,1] - self.actions[:,0])[:,np.newaxis], num_actions_to_sample, axis=1))
@@ -101,12 +101,12 @@ class GPSARSA:
         action_explore = action_explore[:, np.newaxis]            
         explore = np.random.rand()
 
-        if (self.D.shape[0]==0):
+        if (self.D.shape[1]==0):
             Q = self.Q_mu(state, action_explore)
             action = action_explore
 
         else:
-            Q = np.zeros(num_actions_to_sample, 1)
+            Q = np.zeros((num_actions_to_sample, 1))
             for a in range(num_actions_to_sample):
                 action = actions[:,a][:,np.newaxis]
                 traj = np.concatenate((state, action), axis=0)
@@ -115,9 +115,9 @@ class GPSARSA:
             action_exploit = np.argmin(Q, axis=0)
             Q_exploit = Q[action_exploit, 0]
             action_exploit = actions[:, action_exploit][:,np.newaxis]
-            
+
             Q_explore = self.Q_mu(state, action_explore) +\
-                np.dot(self.k_(np.concatenate((state, action_explore), axis=0)), self.diff_alpha_CQ_D)[0,0]
+                np.dot(self.k_(np.concatenate((state, action_explore), axis=0)).T, self.diff_alpha_CQ_D)[0,0]
 
             action = (explore<epsilon)*action_explore + (explore>epsilon)*action_exploit
             Q = (explore<epsilon)*Q_explore + (explore>epsilon)*Q_exploit
@@ -136,32 +136,32 @@ class GPSARSA:
             num_steps = 0
             state = self.env.reset()
             _, action = self.select_action(state, self.epsilon)
-        
-            state_sequence = np.zeros(state.shape[0], max_episode_length+1)
-            state_sequence[:, 0] = state
-            action_sequence = np.zeros(state.shape[0], max_episode_length+1)
-            action_sequence[:, 0] = action
+
+            state_sequence = np.zeros((state.shape[0], max_episode_length+1))
+            state_sequence[:, 0] = state[:,0]
+            action_sequence = np.zeros((action.shape[0], max_episode_length+1))
+            action_sequence[:, 0] = action[:,0]
             reward_sequence = np.zeros(max_episode_length)
             
             while ((num_steps < max_episode_length) and (not is_terminal)):
                 num_steps+=1
                 state, reward, is_terminal = self.env.step(action)
-                action = self.select_action(state, self.epsilon)
+                _, action = self.select_action(state, self.epsilon)
 
-                state_sequence[:, num_steps] = state
-                action_sequence[:, num_steps] = action
-                reward_sequence[num_steps-1, 0] = reward
+                state_sequence[:, num_steps] = state[:,0]
+                action_sequence[:, num_steps] = action[:,0]
+                reward_sequence[num_steps-1] = reward
 
             state_sequence = state_sequence[:, 0:(num_steps+1)]
             action_sequence = action_sequence[:, 0:(num_steps+1)]
-            reward_sequence = reward_sequence[0:num_steps, 0]
+            reward_sequence = reward_sequence[0:num_steps]
 
-            if (not self.D):
+            if (self.D.shape[1]==0):
 
                 traj = np.concatenate((state_sequence[:,0], action_sequence[:,0]))[:,np.newaxis]
                 self.D = traj
-                self.Q_D = np.array([[self.Q_mu(state_sequence[:,0], action_sequence[:,0])]])
-                self.K_inv = np.array([[1/self.kernel(traj, traj)]])
+                self.Q_D = self.Q_mu(state_sequence[:,0], action_sequence[:,0])
+                self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]])
                 self.alpha_ = np.array([[0]])
                 self.C_= np.array([[0]])
@@ -171,9 +171,9 @@ class GPSARSA:
 
     def get_value_function(self, states):
         
-        V = np.zeros(states.shape[1],1)
+        V = np.zeros((states.shape[1],1))
         for s in range(states.shape[1]):
-            Q,_ = self.select_action(states[:,s][:,np.newaxis])
+            Q, _ = self.select_action(states[:,s][:,np.newaxis])
             V[s,0] = Q
 
         return V

@@ -42,7 +42,9 @@ def main():
     u_grid = np.linspace(u_limits[0], u_limits[1], numPointsu)
     num_iterations = 400
 
+    print('Value Iteration for target domain')
     policy_target, V_target = ValueIterationSwingUp(environment_target, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
+    print('Value Iteration in simulation')
     policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
     # policy_start = np.zeros((numPointsx, numPointsx_dot))
     # policy_target = np.zeros((numPointsx, numPointsx_dot))
@@ -62,16 +64,17 @@ def main():
     sigmal = np.array([[0.6345],[1.2656]])
     kernel = SqExpArd(sigmal, sigmaf)
     p_target = lambda s: interpn((x_grid, x_dot_grid), policy_target, s.T)[0]
-    V_mu = lambda s: interpn((x_grid, x_dot_grid), V_start, s.T)[0]
+    V_mu = lambda s: interpn((x_grid, x_dot_grid), V_start, s.T)[:,np.newaxis]
 
     nu = (sigmaf**2)*(np.exp(-1)-0.36)
     max_episode_length = 1000
-    num_episodes = 1000
+    num_episodes = 500
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
 
     gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu)
+    print('GPTD.. ')
     gptd.build_posterior(p_target, num_episodes, max_episode_length)
     V_gptd = gptd.get_value_function(states)
     V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))

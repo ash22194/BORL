@@ -46,7 +46,7 @@ class GPTD:
 
             if (et - self.nu) > 10**(-4):
                 self.D = np.concatenate((self.D, trajt), axis=1)
-                self.V_D = np.concatenate((self.V_D, np.array([[self.V_mu(state_sequence[:,i+1])]])), axis=0)
+                self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1])), axis=0)
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
@@ -117,7 +117,7 @@ class GPTD:
 
                 traj = state_sequence[:,0][:,np.newaxis]
                 self.D = traj
-                self.V_D = np.array([[self.V_mu(state_sequence[:,0])]])
+                self.V_D = self.V_mu(state_sequence[:,0])
                 self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]])
                 self.alpha_ = np.array([[0]])
