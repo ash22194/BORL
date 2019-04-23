@@ -1,7 +1,7 @@
 from tqdm import trange
 import numpy as np
 
-class GPTD:
+class GPTD_rewardBased:
     def __init__(self, env, nu, sigma0, gamma, kernel, V_mu=[]):
         
         self.env = env
@@ -36,7 +36,9 @@ class GPTD:
         for i in range(reward_sequence.shape[0]):
 
             trajt_1 = state_sequence[:,i][:,np.newaxis]
+            Vt_1 = self.get_value_function(trajt_1)[0]
             trajt = state_sequence[:,i+1][:,np.newaxis]
+            Vt = self.get_value_function(trajt)[0]
             k_t_1 = self.k_(trajt_1)
             k_t = self.k_(trajt)
             ktt = self.kernel(trajt, trajt)
@@ -44,7 +46,7 @@ class GPTD:
             et = (ktt - np.dot(k_t.T, at))
             delk_t_1 = k_t_1 - self.gamma*k_t
 
-            if (et - self.nu) > 10**(-4):
+            if ((et - self.nu) > 10**(-4)) and (abs(Vt_1 - self.gamma*Vt - reward_sequence[i]) > 2*abs(reward_sequence[i])):
                 self.D = np.concatenate((self.D, trajt), axis=1)
                 self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1])[:,np.newaxis]), axis=0)
 
@@ -69,6 +71,8 @@ class GPTD:
                 self.A = np.zeros((self.A.shape[0]+1, self.A.shape[1]), dtype=np.float64, order='C')
                 self.A[-1, 0] = 1
 
+                self.diff_alpha_CV_D = self.alpha_ - np.dot(self.C_, self.V_D)
+
             else:
 
                 ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
@@ -81,9 +85,9 @@ class GPTD:
 
                 self.A = at
 
-            assert (not np.isnan(self.alpha_).any()), "Check alpha for NaN values"
+                self.diff_alpha_CV_D = self.alpha_ - np.dot(self.C_, self.V_D)
 
-        self.diff_alpha_CV_D = self.alpha_ - np.dot(self.C_, self.V_D)
+            assert (not np.isnan(self.alpha_).any()), "Check alpha for NaN values"
 
     def build_posterior(self, policy, num_episodes, max_episode_length):
         """

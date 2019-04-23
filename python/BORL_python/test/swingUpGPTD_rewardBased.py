@@ -1,14 +1,15 @@
 import os
-import numpy as np
 import pickle as pkl
+import dill as dl
+import numpy as np
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
+from scipy.integrate import ode
 from BORL_python.env.pendulum import pendulum
 from BORL_python.value.ValueIteration import ValueIterationSwingUp
-from BORL_python.value.GPSARSA import GPSARSA
+from BORL_python.value.GPTD_rewardBased import GPTD_rewardBased
 from BORL_python.utils.kernels import SqExpArd
-from BORL_python.utils.functions import buildQfromV
 
 def main():
 
@@ -41,13 +42,13 @@ def main():
     gamma = 0.99
     x_grid = np.linspace(x_limits[0], x_limits[1], numPointsx)
     x_dot_grid = np.linspace(x_dot_limits[0], x_dot_limits[1], numPointsx_dot)
-    u_limits = np.array([-25,25])
+    u_limits = np.array([-15,15])
     numPointsu = 121
     u_grid = np.linspace(u_limits[0], u_limits[1], numPointsu)
     num_iterations = 600
 
     code_dir = os.path.dirname(os.path.realpath(__file__))
-    data_dir = '../data/GPSARSA'
+    data_dir = '../data/GPTD'
     data_dir = os.path.join(code_dir, data_dir)
 
     print('Value Iteration for target domain')
@@ -79,6 +80,7 @@ def main():
     if (not fileFound):
         policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
         pkl.dump((policy_start, V_start), open(os.path.join(data_dir, start_file), 'wb'))
+
     # policy_start = np.zeros((numPointsx, numPointsx_dot))
     # policy_target = np.zeros((numPointsx, numPointsx_dot))
     # V_start = np.zeros((numPointsx, numPointsx_dot))
@@ -134,34 +136,32 @@ def main():
         plt.show()
 
     """
-    GPSARSA
+    GPTD
     """
     sigma0 = 0.2
-    # sigmaf = 13.6596
-    # sigmal = np.array([[0.5977],[1.9957],[5.7314]])
-    sigmaf = 16.8202
-    sigmal = np.array([[1.3087],[2.9121],[9.6583],[7.0756]])
-    nu = (sigmaf**2)*(np.exp(-1)-0.36)
-    epsilon = 0.1
+    sigmaf = 7.6156
+    sigmal = np.array([[0.6345],[1.2656]], dtype=np.float64)
+    kernel = SqExpArd(sigmal, sigmaf)
+    policy_target_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_target)
+    policy_prior = lambda s: policy_target_(s.T)[:,np.newaxis]
+    V_mu = RegularGridInterpolator((x_grid, x_dot_grid), V_start)
+    V_mu_ = lambda s: V_mu(s.T)
+
+    nu = (np.exp(-1)-0.3)
     max_episode_length = 1000
     num_episodes = 500
-
-    kernel = SqExpArd(sigmal, sigmaf)
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
-    V_mu = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), V_start)(s.T)
-    Q_mu = buildQfromV(V_mu, environment, gamma, states, u_grid[np.newaxis,:]) # Q_mu is number_of_actions x number_of_states
-    Q_mu = np.reshape(Q_mu.T, (numPointsx, numPointsx_dot, numPointsu))
-    Q_mu = RegularGridInterpolator((x_grid, x_dot_grid, u_grid), Q_mu)
-    Q_mu_ = lambda s,a: Q_mu(np.concatenate((s,a + 0.0001*(a[0,:]<=u_grid[0]) - 0.0001*(a[0,:]>=u_grid[-1])), axis=0).T)
-    policy_prior = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), policy_start)(s.T)[:,np.newaxis]
 
-    gpsarsa = GPSARSA(environment_target, u_limits[np.newaxis,:], nu, sigma0, gamma, epsilon, kernel, Q_mu_, policy_prior)
-    print('GPSARSA.. ')
-    gpsarsa.build_policy_monte_carlo(num_episodes, max_episode_length)
-    V_gpsarsa = gpsarsa.get_value_function(states)
-    V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
+    gptd = GPTD_rewardBased(environment_target, nu, sigma0, gamma, kernel, V_mu_)
+    print('GPTD.. ')
+    gptd.build_posterior(policy_prior, num_episodes, max_episode_length)
+    V_gptd = gptd.get_value_function(states)
+    V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
+    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
+    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gptd)))
+    set_trace()
     
     """
     Results
@@ -175,7 +175,7 @@ def main():
     plt.colorbar()
 
     plt.subplot(3,1,2)
-    plt.imshow(np.abs(V_target - V_gpsarsa).T, aspect='auto',\
+    plt.imshow(np.abs(V_target - V_gptd).T, aspect='auto',\
         extent=(x_limits[0], x_limits[1], x_dot_limits[1], x_dot_limits[0]), origin='upper')
     plt.ylabel('theta-dot')
     plt.xlabel('theta')
@@ -183,18 +183,15 @@ def main():
     plt.colorbar()
 
     plt.subplot(3,1,3)
-    plt.scatter(gpsarsa.D[0,:], gpsarsa.D[1,:], marker='o', c='red')
+    plt.scatter(gptd.D[0,:], gptd.D[1,:], marker='o', c='red')
     plt.xlim(x_limits[0], x_limits[1])
     plt.xlabel('theta')
     plt.ylim(x_dot_limits[0], x_dot_limits[1])
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
-
-    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+    
     set_trace()
-
-    resultDirName = 'GPSARSA_run'
+    resultDirName = 'GPTD_rewardBased_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):
         for d in dirs:
@@ -211,4 +208,4 @@ def main():
     set_trace()
 
 if __name__=='__main__':
-    main() 3080
+    main()

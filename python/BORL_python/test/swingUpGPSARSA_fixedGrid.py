@@ -1,12 +1,14 @@
 import os
 import numpy as np
 import pickle as pkl
+import dill as dl
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
+from scipy.integrate import ode
 from BORL_python.env.pendulum import pendulum
 from BORL_python.value.ValueIteration import ValueIterationSwingUp
-from BORL_python.value.GPSARSA import GPSARSA
+from BORL_python.value.GPSARSA_fixedGrid import GPSARSA_fixedGrid
 from BORL_python.utils.kernels import SqExpArd
 from BORL_python.utils.functions import buildQfromV
 
@@ -41,7 +43,7 @@ def main():
     gamma = 0.99
     x_grid = np.linspace(x_limits[0], x_limits[1], numPointsx)
     x_dot_grid = np.linspace(x_dot_limits[0], x_dot_limits[1], numPointsx_dot)
-    u_limits = np.array([-25,25])
+    u_limits = np.array([-15.0,15.0])
     numPointsu = 121
     u_grid = np.linspace(u_limits[0], u_limits[1], numPointsu)
     num_iterations = 600
@@ -88,6 +90,7 @@ def main():
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
     policy_target = np.reshape(policy_target, (numPointsx, numPointsx_dot))
     policy_start = np.reshape(policy_start, (numPointsx, numPointsx_dot))
+
 
     """
     Test learned policies
@@ -137,11 +140,8 @@ def main():
     GPSARSA
     """
     sigma0 = 0.2
-    # sigmaf = 13.6596
-    # sigmal = np.array([[0.5977],[1.9957],[5.7314]])
-    sigmaf = 16.8202
-    sigmal = np.array([[1.3087],[2.9121],[9.6583],[7.0756]])
-    nu = (sigmaf**2)*(np.exp(-1)-0.36)
+    sigmaf = 13.6596
+    sigmal = np.array([[0.5977],[1.9957],[5.7314]])
     epsilon = 0.1
     max_episode_length = 1000
     num_episodes = 500
@@ -155,18 +155,29 @@ def main():
     Q_mu = np.reshape(Q_mu.T, (numPointsx, numPointsx_dot, numPointsu))
     Q_mu = RegularGridInterpolator((x_grid, x_dot_grid, u_grid), Q_mu)
     Q_mu_ = lambda s,a: Q_mu(np.concatenate((s,a + 0.0001*(a[0,:]<=u_grid[0]) - 0.0001*(a[0,:]>=u_grid[-1])), axis=0).T)
-    policy_prior = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), policy_start)(s.T)[:,np.newaxis]
 
-    gpsarsa = GPSARSA(environment_target, u_limits[np.newaxis,:], nu, sigma0, gamma, epsilon, kernel, Q_mu_, policy_prior)
+    policy_start_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_start)
+    policy_prior = lambda s: policy_start_(s.T)[:,np.newaxis]
+
+    numElementsInD = 2000
+    D = (np.concatenate((x_limits[0] + np.random.rand(1,numElementsInD)*(x_limits[-1] - x_limits[0]),\
+                x_dot_limits[0] + np.random.rand(1,numElementsInD)*(x_dot_limits[-1] - x_dot_limits[0])), axis=0), \
+                u_limits[0] + np.random.rand(1,numElementsInD)*(u_limits[-1] - u_limits[0]))
+
+    # D = (D, policy_prior(D).T)
+    gpsarsa = GPSARSA_fixedGrid(environment_target, u_limits[np.newaxis,:], sigma0, gamma, epsilon, kernel, D, Q_mu_, policy_prior)
     print('GPSARSA.. ')
     gpsarsa.build_policy_monte_carlo(num_episodes, max_episode_length)
     V_gpsarsa = gpsarsa.get_value_function(states)
     V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
+    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
+    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+    set_trace()
     
     """
     Results
     """
-    plt.subplot(3,1,1)
+    plt.subplot(2,1,1)
     plt.imshow(np.abs(V_target - V_start).T, aspect='auto',\
         extent=(x_limits[0], x_limits[1], x_dot_limits[1], x_dot_limits[0]), origin='upper')
     plt.ylabel('theta-dot')
@@ -174,27 +185,16 @@ def main():
     plt.title('Initial Diff')
     plt.colorbar()
 
-    plt.subplot(3,1,2)
+    plt.subplot(2,1,2)
     plt.imshow(np.abs(V_target - V_gpsarsa).T, aspect='auto',\
         extent=(x_limits[0], x_limits[1], x_dot_limits[1], x_dot_limits[0]), origin='upper')
     plt.ylabel('theta-dot')
     plt.xlabel('theta')
     plt.title('Final Diff')
     plt.colorbar()
-
-    plt.subplot(3,1,3)
-    plt.scatter(gpsarsa.D[0,:], gpsarsa.D[1,:], marker='o', c='red')
-    plt.xlim(x_limits[0], x_limits[1])
-    plt.xlabel('theta')
-    plt.ylim(x_dot_limits[0], x_dot_limits[1])
-    plt.ylabel('theta-dot')
-    plt.title('Dictionary Points')
-
-    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+    
     set_trace()
-
-    resultDirName = 'GPSARSA_run'
+    resultDirName = 'GPSARSA_fixedGrid_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):
         for d in dirs:
@@ -211,4 +211,4 @@ def main():
     set_trace()
 
 if __name__=='__main__':
-    main() 3080
+    main()

@@ -1,12 +1,11 @@
 from tqdm import trange
 import numpy as np 
 from ipdb import set_trace
-class GPSARSA:
-    def __init__(self, env, u_limits, nu, sigma0, gamma, epsilon, kernel, Q_mu=[], policy_prior=[]):
+class GPSARSA_fixedGrid:
+    def __init__(self, env, u_limits, sigma0, gamma, epsilon, kernel, D, Q_mu=[], policy_prior=[]):
         
         self.env = env
         self.actions = u_limits
-        self.nu = nu
         self.gamma = gamma
         self.epsilon = epsilon
         self.sigma0 = sigma0
@@ -19,13 +18,17 @@ class GPSARSA:
                                      np.repeat((self.actions[:,-1] - self.actions[:,0])[:,np.newaxis], s.shape[1], axis=1)* \
                                      np.random.rand(self.actions.shape[0], s.shape[1])
         self.policy_prior = policy_prior
-        self.D = np.array([[]], dtype=np.float64, order='C')
-        self.A = np.array([[]], dtype=np.float64, order='C')
-        self.Q_D = np.array([[]], dtype=np.float64, order='C')
-        self.K_inv = np.array([[]], dtype=np.float64, order='C')
-        self.alpha_ = np.array([[]], dtype=np.float64, order='C')
-        self.C_ = np.array([[]], dtype=np.float64, order='C')
-        self.diff_alpha_CQ_D = np.array([[]], dtype=np.float64, order='C')
+        self.Q_D = self.Q_mu(D[0], D[1])[:,np.newaxis]
+        self.D = np.concatenate((D[0], D[1]), axis=0)
+        self.A = np.zeros((self.D.shape[1],1), dtype=np.float64, order='C')
+        self.A[-1,0] = 1
+        K = np.empty((self.D.shape[1], self.D.shape[1]), dtype=np.float64, order='C')
+        for i in range(self.D.shape[1]):
+            K[:,i] = self.k_(self.D[:,i])[:,0]
+        self.K_inv = np.linalg.inv(K)
+        self.alpha_ = np.zeros((self.D.shape[1],1), dtype=np.float64, order='C')
+        self.C_ = np.zeros((self.D.shape[1],self.D.shape[1]), dtype=np.float64, order='C')
+        self.diff_alpha_CQ_D = np.empty((self.D.shape[1],1), dtype=np.float64, order='C')
 
     def k_(self,x):
 
@@ -42,54 +45,24 @@ class GPSARSA:
         """
 
         for i in range(reward_sequence.shape[0]):
-            # trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i]))[:,np.newaxis]
-            # trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1]))[:,np.newaxis]
-            trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i], \
-                                      self.Q_mu(state_sequence[:,i], action_sequence[:,i])))[:,np.newaxis]
-            trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1], \
-                                      self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])))[:,np.newaxis]
+            trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i]))[:,np.newaxis]
+            trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1]))[:,np.newaxis]
 
             k_t_1 = self.k_(trajt_1)
             k_t = self.k_(trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
-            et = (ktt - np.dot(k_t.T, at))
             delk_t_1 = k_t_1 - self.gamma*k_t
+        
+            ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
+            st = self.sigma0**2 - np.dot(ct.T, delk_t_1)
 
-            if (et - self.nu) > 10**(-4):
-                self.D = np.concatenate((self.D, trajt), axis=1)
-                self.Q_D = np.concatenate((self.Q_D, self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])[:,np.newaxis]), axis=0)
+            diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
+            self.alpha_ = self.alpha_ + ct/st*diff_r
 
-                at_by_et = at/et
-                self.K_inv = np.concatenate((self.K_inv + np.dot(at_by_et, at.T), -at_by_et), axis=1)
-                self.K_inv = np.concatenate((self.K_inv, np.concatenate((-at_by_et.T, 1/et), axis=1)), axis=0)
+            self.C_ = self.C_ + np.dot(ct, ct.T)/st
 
-                c_t = np.dot(self.C_, delk_t_1) - self.A
-
-                delktt = np.dot(self.A.T, delk_t_1 - self.gamma*k_t) + (self.gamma**2)*ktt
-                s_t = self.sigma0**2 + delktt - np.dot(delk_t_1.T, np.dot(self.C_, delk_t_1))
-
-                diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
-                self.alpha_ = np.concatenate((self.alpha_ + c_t/s_t*diff_r, self.gamma/s_t*diff_r), axis=0)
-
-                gc_t_by_s_t = (self.gamma/s_t)*c_t
-                self.C_ = np.concatenate((self.C_ + np.dot(c_t, c_t.T)/s_t, gc_t_by_s_t), axis=1) 
-                self.C_ = np.concatenate((self.C_, np.concatenate((gc_t_by_s_t.T, self.gamma**2/s_t), axis=1)), axis=0)
-
-                self.A = np.zeros((self.A.shape[0]+1, self.A.shape[1]), dtype=np.float64, order='C')
-                self.A[-1, 0] = 1
-
-            else:
-
-                ct = np.dot(self.C_, delk_t_1) - (self.A - self.gamma*at)
-                st = self.sigma0**2 - np.dot(ct.T, delk_t_1)
-
-                diff_r = np.dot(delk_t_1.T, self.alpha_)[0,0] - reward_sequence[i]
-                self.alpha_ = self.alpha_ + ct/st*diff_r
-
-                self.C_ = self.C_ + np.dot(ct, ct.T)/st
-
-                self.A = at
+            self.A = at
 
             assert (not np.isnan(self.alpha_).any()), "Check alpha for NaN values"
 
@@ -116,22 +89,20 @@ class GPSARSA:
             Q = np.empty((num_actions_to_sample, 1), dtype=np.float64, order='C')
             for a in range(num_actions_to_sample):
                 action = actions[:,a][:,np.newaxis]
-                # traj = np.concatenate((state, action), axis=0)
-                traj = np.concatenate((state, action, self.Q_mu(state, action)[:,np.newaxis]), axis=0)
+                traj = np.concatenate((state, action), axis=0)
                 Q[a,0] = self.Q_mu(state, action) + np.dot(self.k_(traj).T, self.diff_alpha_CQ_D)
 
-            action_exploit = np.argmin(Q, axis=0)
+            action_exploit = np.argmin(Q, axis=0)[0]
             Q_exploit = Q[action_exploit, 0]
             action_exploit = actions[:, action_exploit][:,np.newaxis]
 
             Q_explore = self.Q_mu(state, action_explore) +\
-                np.dot(self.k_(np.concatenate((state, action_explore, self.Q_mu(state, action_explore)), axis=0)).T, self.diff_alpha_CQ_D)[0,0]
+                np.dot(self.k_(np.concatenate((state, action_explore), axis=0)).T, self.diff_alpha_CQ_D)[0,0]
 
             action = (explore<epsilon)*action_explore + (explore>epsilon)*action_exploit
             Q = (explore<epsilon)*Q_explore + (explore>epsilon)*Q_exploit
 
         return Q, action
-
 
     def build_policy_monte_carlo(self, num_episodes, max_episode_length):
         """
@@ -166,9 +137,7 @@ class GPSARSA:
 
             if (self.D.shape[1]==0):
 
-                # traj = np.concatenate((state_sequence[:,0], action_sequence[:,0]))[:,np.newaxis]
-                traj = np.concatenate((state_sequence[:,0], action_sequence[:,0],\
-                                    self.Q_mu(state_sequence[:,0], action_sequence[:,0])))[:,np.newaxis]
+                traj = np.concatenate((state_sequence[:,0], action_sequence[:,0]))[:,np.newaxis]
                 self.D = traj
                 self.Q_D = self.Q_mu(state_sequence[:,0], action_sequence[:,0])[:,np.newaxis]
                 self.K_inv = 1/self.kernel(traj, traj)

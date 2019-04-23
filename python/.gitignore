@@ -1,3 +1,4 @@
+*.cprof
 *.ipynb
 *.pyc
 .python-version
