@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pickle as pkl
+import dill as dl
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
@@ -79,11 +80,7 @@ def main():
     if (not fileFound):
         policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
         pkl.dump((policy_start, V_start), open(os.path.join(data_dir, start_file), 'wb'))
-    # policy_start = np.zeros((numPointsx, numPointsx_dot))
-    # policy_target = np.zeros((numPointsx, numPointsx_dot))
-    # V_start = np.zeros((numPointsx, numPointsx_dot))
-    # V_target = np.zeros((numPointsx, numPointsx_dot))
-
+    
     V_target = np.reshape(V_target, (numPointsx, numPointsx_dot))
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
     policy_target = np.reshape(policy_target, (numPointsx, numPointsx_dot))
@@ -154,15 +151,19 @@ def main():
     Q_mu = buildQfromV(V_mu, environment, gamma, states, u_grid[np.newaxis,:]) # Q_mu is number_of_actions x number_of_states
     Q_mu = np.reshape(Q_mu.T, (numPointsx, numPointsx_dot, numPointsu))
     Q_mu = RegularGridInterpolator((x_grid, x_dot_grid, u_grid), Q_mu)
-    Q_mu_ = lambda s,a: Q_mu(np.concatenate((s,a + 0.0001*(a[0,:]<=u_grid[0]) - 0.0001*(a[0,:]>=u_grid[-1])), axis=0).T)
-    policy_prior = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), policy_start)(s.T)[:,np.newaxis]
+    Q_mu_ = lambda s,a: Q_mu(np.concatenate((s,a + 0.0001*(a[0,:]<=u_grid[0]) - 0.0001*(a[0,:]>=u_grid[-1])), axis=0).T)[:,np.newaxis]
+    policy_start_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_start)
+    policy_prior = lambda s: policy_start_(s.T)[:,np.newaxis]
 
     gpsarsa = GPSARSA(environment_target, u_limits[np.newaxis,:], nu, sigma0, gamma, epsilon, kernel, Q_mu_, policy_prior)
     print('GPSARSA.. ')
     gpsarsa.build_policy_monte_carlo(num_episodes, max_episode_length)
     V_gpsarsa = gpsarsa.get_value_function(states)
     V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
-    
+    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
+    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+    set_trace()
+
     """
     Results
     """
@@ -190,10 +191,6 @@ def main():
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
 
-    print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
-    set_trace()
-
     resultDirName = 'GPSARSA_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):
@@ -211,4 +208,4 @@ def main():
     set_trace()
 
 if __name__=='__main__':
-    main() 3080
+    main()

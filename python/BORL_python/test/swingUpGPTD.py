@@ -1,6 +1,7 @@
 import os
 import pickle as pkl
 import numpy as np
+import dill as dl
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
@@ -141,19 +142,21 @@ def main():
     sigmaf = 7.6156
     sigmal = np.array([[0.6345],[1.2656]], dtype=np.float64)
     kernel = SqExpArd(sigmal, sigmaf)
-    p_target = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), policy_target)(s.T)
-    V_mu = lambda s: RegularGridInterpolator((x_grid, x_dot_grid), V_start)(s.T)
+    policy_target_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_target)
+    policy_prior = lambda s: policy_target_(s.T)[:,np.newaxis]
+    V_mu = RegularGridInterpolator((x_grid, x_dot_grid), V_start)
+    V_mu_ = lambda s: V_mu(s.T)[:,np.newaxis]
 
     nu = (np.exp(-1)-0.3)
     max_episode_length = 1000
-    num_episodes = 600
+    num_episodes = 100
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
 
-    gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu)
+    gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu_)
     print('GPTD.. ')
-    gptd.build_posterior(p_target, num_episodes, max_episode_length)
+    gptd.build_posterior(policy_prior, num_episodes, max_episode_length)
     V_gptd = gptd.get_value_function(states)
     V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
@@ -187,7 +190,6 @@ def main():
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
     
-    set_trace()
     resultDirName = 'GPTD_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):

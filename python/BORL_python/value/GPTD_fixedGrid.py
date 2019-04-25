@@ -11,14 +11,12 @@ class GPTD_fixedGrid:
         if (not V_mu):
             V_mu = lambda s: np.zeros(s.shape[1])
         self.V_mu = V_mu
-        self.V_D = self.V_mu(D)[:,np.newaxis]
+        self.V_D = self.V_mu(D)
         self.D = D
         # self.D = np.concatenate((self.D, self.V_D.T), axis=0) # Use V_mu in computing distances!
         self.A = np.zeros((self.D.shape[1],1), dtype=np.float64, order='C')
         self.A[-1,0] = 1
-        K = np.empty((self.D.shape[1], self.D.shape[1]), dtype=np.float64, order='C')
-        for i in range(self.D.shape[1]):
-            K[:,i] = self.k_(self.D[:,i])[:,0]
+        K = self.kernel(self.D, self.D)
         self.K_inv = np.linalg.inv(K)
         self.alpha_ = np.zeros((self.D.shape[1],1), dtype=np.float64, order='C')
         self.C_ = np.zeros((self.D.shape[1],self.D.shape[1]), dtype=np.float64, order='C')
@@ -43,8 +41,8 @@ class GPTD_fixedGrid:
             trajt = state_sequence[:,i+1][:,np.newaxis]
             # trajt_1 = np.concatenate((trajt_1, self.V_mu(trajt_1)), axis=0) # Use V_mu as well
             # trajt = np.concatenate((trajt, self.V_mu(trajt)), axis=0)
-            k_t_1 = self.k_(trajt_1)
-            k_t = self.k_(trajt)
+            k_t_1 = self.kernel(self.D, trajt_1)
+            k_t = self.kernel(self.D, trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
             delk_t_1 = k_t_1 - self.gamma*k_t
@@ -95,7 +93,7 @@ class GPTD_fixedGrid:
 
                 traj = state_sequence[:,0][:,np.newaxis]
                 self.D = traj
-                self.V_D = self.V_mu(state_sequence[:,0])[:,np.newaxis]
+                self.V_D = self.V_mu(state_sequence[:,0][:,np.newaxis])
                 self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]])
                 self.alpha_ = np.array([[0]])
@@ -107,11 +105,8 @@ class GPTD_fixedGrid:
 
     def get_value_function(self, states):
 
-        V = np.empty(states.shape[1], dtype=np.float64, order='C')
-        for s in range(states.shape[1]):
-            state = states[:,s][:,np.newaxis]
-            traj = state                                           # No use of V_mu in computing distances!
-            # traj = np.concatenate((traj, self.V_mu(traj)), axis=0) # Use V_mu as well
-            V[s] = self.V_mu(state) + np.dot(self.k_(traj).T, self.diff_alpha_CV_D)
+        if (self.D.shape[1]==0):
+            return self.V_mu(states) 
 
-        return V
+        else:
+            return self.V_mu(states) + np.dot(self.kernel(self.D, states).T, self.diff_alpha_CV_D)

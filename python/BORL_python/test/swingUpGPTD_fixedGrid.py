@@ -80,10 +80,6 @@ def main():
         policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
         pkl.dump((policy_start, V_start), open(os.path.join(data_dir, start_file), 'wb'))
 
-    # policy_start = np.zeros((numPointsx, numPointsx_dot))
-    # policy_target = np.zeros((numPointsx, numPointsx_dot))
-    # V_start = np.zeros((numPointsx, numPointsx_dot))
-    # V_target = np.zeros((numPointsx, numPointsx_dot))
 
     V_target = np.reshape(V_target, (numPointsx, numPointsx_dot))
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
@@ -146,10 +142,10 @@ def main():
     policy_target_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_target)
     policy_prior = lambda s: policy_target_(s.T)[:,np.newaxis]
     V_mu = RegularGridInterpolator((x_grid, x_dot_grid), V_start)
-    V_mu_ = lambda s: V_mu(s.T)
+    V_mu_ = lambda s: V_mu(s.T)[:,np.newaxis]
 
     max_episode_length = 1000
-    num_episodes = 1000
+    num_episodes = 100
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
@@ -194,7 +190,6 @@ def main():
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
     
-    set_trace()
     resultDirName = 'GPTD_fixedGrid_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):

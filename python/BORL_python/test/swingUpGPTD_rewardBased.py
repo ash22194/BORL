@@ -81,11 +81,6 @@ def main():
         policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
         pkl.dump((policy_start, V_start), open(os.path.join(data_dir, start_file), 'wb'))
 
-    # policy_start = np.zeros((numPointsx, numPointsx_dot))
-    # policy_target = np.zeros((numPointsx, numPointsx_dot))
-    # V_start = np.zeros((numPointsx, numPointsx_dot))
-    # V_target = np.zeros((numPointsx, numPointsx_dot))
-
     V_target = np.reshape(V_target, (numPointsx, numPointsx_dot))
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
     policy_target = np.reshape(policy_target, (numPointsx, numPointsx_dot))
@@ -145,7 +140,7 @@ def main():
     policy_target_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_target)
     policy_prior = lambda s: policy_target_(s.T)[:,np.newaxis]
     V_mu = RegularGridInterpolator((x_grid, x_dot_grid), V_start)
-    V_mu_ = lambda s: V_mu(s.T)
+    V_mu_ = lambda s: V_mu(s.T)[:,np.newaxis]
 
     nu = (np.exp(-1)-0.3)
     max_episode_length = 1000
@@ -190,7 +185,6 @@ def main():
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
     
-    set_trace()
     resultDirName = 'GPTD_rewardBased_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):

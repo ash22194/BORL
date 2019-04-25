@@ -39,8 +39,8 @@ class GPTD_rewardBased:
             Vt_1 = self.get_value_function(trajt_1)[0]
             trajt = state_sequence[:,i+1][:,np.newaxis]
             Vt = self.get_value_function(trajt)[0]
-            k_t_1 = self.k_(trajt_1)
-            k_t = self.k_(trajt)
+            k_t_1 = self.kernel(self.D, trajt_1)
+            k_t = self.kernel(self.D, trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
             et = (ktt - np.dot(k_t.T, at))
@@ -48,7 +48,7 @@ class GPTD_rewardBased:
 
             if ((et - self.nu) > 10**(-4)) and (abs(Vt_1 - self.gamma*Vt - reward_sequence[i]) > 2*abs(reward_sequence[i])):
                 self.D = np.concatenate((self.D, trajt), axis=1)
-                self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1])[:,np.newaxis]), axis=0)
+                self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1][:,np.newaxis])), axis=0)
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
@@ -121,7 +121,7 @@ class GPTD_rewardBased:
 
                 traj = state_sequence[:,0][:,np.newaxis]
                 self.D = traj
-                self.V_D = self.V_mu(state_sequence[:,0])[:,np.newaxis]
+                self.V_D = self.V_mu(state_sequence[:,0][:,np.newaxis])
                 self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]], dtype=np.float64, order='C')
                 self.alpha_ = np.array([[0]], dtype=np.float64, order='C')
@@ -133,10 +133,8 @@ class GPTD_rewardBased:
 
     def get_value_function(self, states):
 
-        V = np.zeros(states.shape[1], dtype=np.float64, order='C')
-        for s in range(states.shape[1]):
-            state = states[:,s][:,np.newaxis]
-            traj = state
-            V[s] = self.V_mu(state) + np.dot(self.k_(traj).T, self.diff_alpha_CV_D)
+        if (self.D.shape[1]==0):
+            return self.V_mu(states) 
 
-        return V
+        else:
+            return self.V_mu(states) + np.dot(self.kernel(self.D, states).T, self.diff_alpha_CV_D)

@@ -42,15 +42,15 @@ class GPSARSA:
         """
 
         for i in range(reward_sequence.shape[0]):
-            # trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i]))[:,np.newaxis]
-            # trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1]))[:,np.newaxis]
-            trajt_1 = np.concatenate((state_sequence[:,i], action_sequence[:,i], \
-                                      self.Q_mu(state_sequence[:,i], action_sequence[:,i])))[:,np.newaxis]
-            trajt = np.concatenate((state_sequence[:,i+1], action_sequence[:,i+1], \
-                                      self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])))[:,np.newaxis]
+            # trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis]))
+            # trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis]))
+            trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis], \
+                                      self.Q_mu(state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis])))
+            trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis], \
+                                      self.Q_mu(state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis])))
 
-            k_t_1 = self.k_(trajt_1)
-            k_t = self.k_(trajt)
+            k_t_1 = self.kernel(self.D, trajt_1)
+            k_t = self.kernel(self.D, trajt)
             ktt = self.kernel(trajt, trajt)
             at = np.dot(self.K_inv, k_t)
             et = (ktt - np.dot(k_t.T, at))
@@ -58,7 +58,9 @@ class GPSARSA:
 
             if (et - self.nu) > 10**(-4):
                 self.D = np.concatenate((self.D, trajt), axis=1)
-                self.Q_D = np.concatenate((self.Q_D, self.Q_mu(state_sequence[:,i+1], action_sequence[:,i+1])[:,np.newaxis]), axis=0)
+                self.Q_D = np.concatenate((self.Q_D, \
+                                           self.Q_mu(state_sequence[:,i+1][:,np.newaxis], \
+                                                     action_sequence[:,i+1][:,np.newaxis])), axis=0)
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at_by_et, at.T), -at_by_et), axis=1)
@@ -117,15 +119,19 @@ class GPSARSA:
             for a in range(num_actions_to_sample):
                 action = actions[:,a][:,np.newaxis]
                 # traj = np.concatenate((state, action), axis=0)
-                traj = np.concatenate((state, action, self.Q_mu(state, action)[:,np.newaxis]), axis=0)
-                Q[a,0] = self.Q_mu(state, action) + np.dot(self.k_(traj).T, self.diff_alpha_CQ_D)
+                traj = np.concatenate((state, action, self.Q_mu(state, action)), axis=0)
+                Q[a,0] = self.Q_mu(state, action) + np.dot(self.kernel(self.D, traj).T, self.diff_alpha_CQ_D)
 
             action_exploit = np.argmin(Q, axis=0)
             Q_exploit = Q[action_exploit, 0]
             action_exploit = actions[:, action_exploit][:,np.newaxis]
 
             Q_explore = self.Q_mu(state, action_explore) +\
-                np.dot(self.k_(np.concatenate((state, action_explore, self.Q_mu(state, action_explore)), axis=0)).T, self.diff_alpha_CQ_D)[0,0]
+                np.dot(self.kernel(self.D, \
+                                    np.concatenate((state, \
+                                                    action_explore, \
+                                                    self.Q_mu(state, action_explore)), axis=0)).T, \
+                       self.diff_alpha_CQ_D)[0,0]
 
             action = (explore<epsilon)*action_explore + (explore>epsilon)*action_exploit
             Q = (explore<epsilon)*Q_explore + (explore>epsilon)*Q_exploit
@@ -166,11 +172,11 @@ class GPSARSA:
 
             if (self.D.shape[1]==0):
 
-                # traj = np.concatenate((state_sequence[:,0], action_sequence[:,0]))[:,np.newaxis]
-                traj = np.concatenate((state_sequence[:,0], action_sequence[:,0],\
-                                    self.Q_mu(state_sequence[:,0], action_sequence[:,0])))[:,np.newaxis]
+                # traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis]))
+                traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis],\
+                                    self.Q_mu(state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis])))
                 self.D = traj
-                self.Q_D = self.Q_mu(state_sequence[:,0], action_sequence[:,0])[:,np.newaxis]
+                self.Q_D = self.Q_mu(state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis])
                 self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]], dtype=np.float64, order='C')
                 self.alpha_ = np.array([[0]], dtype=np.float64, order='C')
