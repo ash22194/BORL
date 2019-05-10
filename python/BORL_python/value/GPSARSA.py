@@ -1,6 +1,7 @@
 from tqdm import trange
 import numpy as np 
 from ipdb import set_trace
+
 class GPSARSA:
     def __init__(self, env, u_limits, nu, sigma0, gamma, epsilon, kernel, Q_mu=[], policy_prior=[]):
         
@@ -12,7 +13,7 @@ class GPSARSA:
         self.sigma0 = sigma0
         self.kernel = kernel.kernel
         if (not Q_mu):
-            Q_mu = lambda s,a: np.zeros(s.shape[1]) 
+            Q_mu = lambda s,a: np.zeros(s.shape[1])[:,np.newaxis]
         self.Q_mu = Q_mu
         if (not policy_prior):
             policy_prior = lambda s: np.repeat(self.actions[:,0][:,np.newaxis], s.shape[1], axis=1) + \
@@ -42,12 +43,12 @@ class GPSARSA:
         """
 
         for i in range(reward_sequence.shape[0]):
-            # trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis]))
-            # trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis]))
-            trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis], \
-                                      self.Q_mu(state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis])))
-            trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis], \
-                                      self.Q_mu(state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis])))
+            trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis]))
+            trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis]))
+            # trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis], \
+            #                           self.Q_mu(state_sequence[:,i][:,np.newaxis], action_sequence[:,i][:,np.newaxis])))
+            # trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis], \
+            #                           self.Q_mu(state_sequence[:,i+1][:,np.newaxis], action_sequence[:,i+1][:,np.newaxis])))
 
             k_t_1 = self.kernel(self.D, trajt_1)
             k_t = self.kernel(self.D, trajt)
@@ -118,19 +119,24 @@ class GPSARSA:
             Q = np.empty((num_actions_to_sample, 1), dtype=np.float64, order='C')
             for a in range(num_actions_to_sample):
                 action = actions[:,a][:,np.newaxis]
-                # traj = np.concatenate((state, action), axis=0)
-                traj = np.concatenate((state, action, self.Q_mu(state, action)), axis=0)
+                traj = np.concatenate((state, action), axis=0)
+                # traj = np.concatenate((state, action, self.Q_mu(state, action)), axis=0)
                 Q[a,0] = self.Q_mu(state, action) + np.dot(self.kernel(self.D, traj).T, self.diff_alpha_CQ_D)
 
             action_exploit = np.argmin(Q, axis=0)
             Q_exploit = Q[action_exploit, 0]
             action_exploit = actions[:, action_exploit][:,np.newaxis]
 
+            # Q_explore = self.Q_mu(state, action_explore) +\
+            #     np.dot(self.kernel(self.D, \
+            #                         np.concatenate((state, \
+            #                                         action_explore, \
+            #                                         self.Q_mu(state, action_explore)), axis=0)).T, \
+            #            self.diff_alpha_CQ_D)[0,0]
             Q_explore = self.Q_mu(state, action_explore) +\
                 np.dot(self.kernel(self.D, \
                                     np.concatenate((state, \
-                                                    action_explore, \
-                                                    self.Q_mu(state, action_explore)), axis=0)).T, \
+                                                    action_explore), axis=0)).T, \
                        self.diff_alpha_CQ_D)[0,0]
 
             action = (explore<epsilon)*action_explore + (explore>epsilon)*action_exploit
@@ -139,26 +145,30 @@ class GPSARSA:
         return Q, action
 
 
-    def build_policy_monte_carlo(self, num_episodes, max_episode_length):
+    def build_policy_monte_carlo(self, num_episodes, max_episode_length, update_every=1, test_every=np.inf, states_V_target=()):
         """
         """
 
         statistics = trange(num_episodes)
+        test_error = np.array([])
+
+        state = self.env.reset()
+        _, action = self.select_action(state, self.epsilon)
+        num_steps = 0
+        
+        state_sequence = np.empty((state.shape[0], (max_episode_length+1)*(update_every+1)), dtype=np.float64, order='C')
+        state_sequence[:,num_steps] = state[:,0]
+        action_sequence = np.empty((action.shape[0], (max_episode_length+1)*(update_every+1)), dtype=np.float64, order='C')
+        action_sequence[:,num_steps] = action[:,0]
+        reward_sequence = np.empty(max_episode_length*(update_every+1), dtype=np.float64, order='C')
 
         for e in statistics:
             is_terminal = False
-            num_steps = 0
-            state = self.env.reset()
-            _, action = self.select_action(state, self.epsilon)
+            num_steps_epi = 0
 
-            state_sequence = np.empty((state.shape[0], max_episode_length+1), dtype=np.float64, order='C')
-            state_sequence[:, 0] = state[:,0]
-            action_sequence = np.empty((action.shape[0], max_episode_length+1), dtype=np.float64, order='C')
-            action_sequence[:, 0] = action[:,0]
-            reward_sequence = np.empty(max_episode_length, dtype=np.float64, order='C')
-            
-            while ((num_steps < max_episode_length) and (not is_terminal)):
+            while ((num_steps_epi < max_episode_length) and (not is_terminal)):
                 num_steps+=1
+                num_steps_epi+=1
                 state, reward, is_terminal = self.env.step(action)
                 _, action = self.select_action(state, self.epsilon)
 
@@ -166,15 +176,14 @@ class GPSARSA:
                 action_sequence[:, num_steps] = action[:,0]
                 reward_sequence[num_steps-1] = reward
 
-            state_sequence = state_sequence[:, 0:(num_steps+1)]
-            action_sequence = action_sequence[:, 0:(num_steps+1)]
-            reward_sequence = reward_sequence[0:num_steps]
+            state = self.env.reset()
+            _, action = self.select_action(state, self.epsilon)
 
             if (self.D.shape[1]==0):
 
-                # traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis]))
-                traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis],\
-                                    self.Q_mu(state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis])))
+                traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis]))
+                # traj = np.concatenate((state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis],\
+                #                     self.Q_mu(state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis])))
                 self.D = traj
                 self.Q_D = self.Q_mu(state_sequence[:,0][:,np.newaxis], action_sequence[:,0][:,np.newaxis])
                 self.K_inv = 1/self.kernel(traj, traj)
@@ -183,8 +192,29 @@ class GPSARSA:
                 self.C_= np.array([[0]], dtype=np.float64, order='C')
                 self.diff_alpha_CQ_D = self.alpha_ - np.dot(self.C_, self.Q_D)
 
-            self.update(state_sequence, action_sequence, reward_sequence)
-            statistics.set_postfix(epi_length=num_steps, dict_size=self.D.shape[1], cumm_reward=np.sum(reward_sequence))
+            if (e%update_every==0):
+                state_sequence = state_sequence[:, 0:(num_steps+1)]
+                action_sequence = action_sequence[:, 0:(num_steps+1)]
+                reward_sequence = reward_sequence[0:num_steps]
+                self.update(state_sequence, action_sequence, reward_sequence)
+
+                state_sequence = np.empty((state.shape[0], (max_episode_length+1)*update_every), dtype=np.float64, order='C')
+                action_sequence = np.empty((action.shape[0], (max_episode_length+1)*update_every), dtype=np.float64, order='C')
+                reward_sequence = np.empty(max_episode_length*(update_every+1), dtype=np.float64, order='C')
+                num_steps = 0
+            else:
+                num_steps += 1
+                reward_sequence[num_steps-1] = 0
+
+            state_sequence[:,num_steps] = state[:,0]
+            action_sequence[:,num_steps] = action[:,0]
+
+            statistics.set_postfix(epi_length=num_steps_epi, dict_size=self.D.shape[1], cumm_reward=np.sum(reward_sequence))
+            if (e%test_every==0 and len(states_V_target)==2):
+                V = self.get_value_function(states_V_target[0])
+                test_error = np.concatenate((test_error, np.array([np.mean(np.abs(V - states_V_target[1]))])))
+
+        return test_error
 
     def get_value_function(self, states):
         

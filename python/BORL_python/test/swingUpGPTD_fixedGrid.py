@@ -2,6 +2,7 @@ import os
 import pickle as pkl
 import numpy as np
 import dill as dl
+import seaborn as sns
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
@@ -145,7 +146,7 @@ def main():
     V_mu_ = lambda s: V_mu(s.T)[:,np.newaxis]
 
     max_episode_length = 1000
-    num_episodes = 100
+    num_episodes = 600
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
@@ -154,13 +155,21 @@ def main():
     D = np.concatenate((x_limits[0] + np.random.rand(1,numElementsInD)*(x_limits[-1] - x_limits[0]),\
                 x_dot_limits[0] + np.random.rand(1,numElementsInD)*(x_dot_limits[-1] - x_dot_limits[0])), axis=0)
 
-    gptd = GPTD_fixedGrid(environment_target, sigma0, gamma, kernel, D, V_mu_)
     print('GPTD.. ')
-    gptd.build_posterior(policy_prior, num_episodes, max_episode_length)
-    V_gptd = gptd.get_value_function(states)
-    V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gptd)))
+    test_every = 50
+    num_runs = 5
+    test_error = np.empty((num_runs, int(num_episodes/test_every)+1))
+    for i in range(num_runs):
+        np.random.seed(i*20)
+        gptd = GPTD_fixedGrid(environment_target, sigma0, gamma, kernel, D)
+        test_error_ = gptd.build_posterior(policy_prior, num_episodes, max_episode_length, \
+                            test_every, states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
+        V_gptd = gptd.get_value_function(states)
+        V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
+        print('Final mean error:%f'%np.mean(np.abs(V_target - V_gptd)))
+        test_error_ = np.concatenate((test_error_, np.array([np.mean(np.abs(V_gptd - V_target))])))
+        test_error[i,:] = test_error_
     set_trace()
     
     """
@@ -201,12 +210,18 @@ def main():
     run += 1
     saveDirectory = os.path.join(data_dir, resultDirName + str(run))
     os.mkdir(saveDirectory)
-    dl.dump_session(filename=os.path.join(saveDirectory, 'session_%d'%num_episodes))
+    with open(os.path.join(saveDirectory, 'session_%d.pkl'%num_episodes),'wb') as f_:
+        dl.dump((test_error), f_)
     plt.savefig(os.path.join(saveDirectory,'V_Diff.png'))
     plt.show()
+    
+    sns.tsplot(test_error)
+    plt.xlabel('Episodes x%d'%test_every)
+    plt.ylabel('Mean absolute error')
+    plt.title('GPTD Fixed Grid')
+    plt.savefig(os.path.join(saveDirectory,'Learning_Trend.png'))
+    plt.show()
     set_trace()
-
-
 
 if __name__=='__main__':
     main()

@@ -2,6 +2,7 @@ import os
 import pickle as pkl
 import numpy as np
 import dill as dl
+import seaborn as sns
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
@@ -31,7 +32,7 @@ def main():
     numPointsx_dot = 81
     dx_dot = (x_dot_limits[-1] - x_dot_limits[0])/(numPointsx_dot - 1)
     Q = np.array([[40, 0], [0, 0.02]])
-    R = 0.2
+    R = 1.0
     test_policies = False
     environment = pendulum(m, l, b, g, dt, goal, x_limits, dx, x_dot_limits, dx_dot, Q, R)
     environment_target = pendulum(m*mass_factor, l*length_factor, b, g, dt, goal, x_limits, dx, x_dot_limits, dx_dot, Q, R)
@@ -80,11 +81,6 @@ def main():
     if (not fileFound):
         policy_start, V_start = ValueIterationSwingUp(environment, gamma, x_grid, x_dot_grid, u_grid, num_iterations)
         pkl.dump((policy_start, V_start), open(os.path.join(data_dir, start_file), 'wb'))
-
-    # policy_start = np.zeros((numPointsx, numPointsx_dot))
-    # policy_target = np.zeros((numPointsx, numPointsx_dot))
-    # V_start = np.zeros((numPointsx, numPointsx_dot))
-    # V_target = np.zeros((numPointsx, numPointsx_dot))
 
     V_target = np.reshape(V_target, (numPointsx, numPointsx_dot))
     V_start = np.reshape(V_start, (numPointsx, numPointsx_dot))
@@ -139,8 +135,10 @@ def main():
     GPTD
     """
     sigma0 = 0.2
-    sigmaf = 7.6156
-    sigmal = np.array([[0.6345],[1.2656]], dtype=np.float64)
+    # sigmaf = 7.6156
+    sigmaf = 5.0738
+    # sigmal = np.array([[0.6345],[1.2656]], dtype=np.float64)
+    sigmal = np.array([[1.2703], [1.8037], [5.1917]], dtype=np.float64)
     kernel = SqExpArd(sigmal, sigmaf)
     policy_target_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_target)
     policy_prior = lambda s: policy_target_(s.T)[:,np.newaxis]
@@ -149,18 +147,25 @@ def main():
 
     nu = (np.exp(-1)-0.3)
     max_episode_length = 1000
-    num_episodes = 100
+    num_episodes = 600
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
     states = np.concatenate((np.reshape(states[0,:,:], (1,states.shape[1]*states.shape[2])),\
                     np.reshape(states[1,:,:], (1,states.shape[1]*states.shape[2]))), axis=0)
-
-    gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu_)
     print('GPTD.. ')
-    gptd.build_posterior(policy_prior, num_episodes, max_episode_length)
-    V_gptd = gptd.get_value_function(states)
-    V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gptd)))
+    test_every = 50
+    num_runs = 5
+    test_error = np.empty((num_runs, int(num_episodes/test_every)+1))
+    for i in range(num_runs):
+        np.random.seed(i*20)
+        gptd = GPTD(environment_target, nu, sigma0, gamma, kernel, V_mu_)
+        test_error_ = gptd.build_posterior(policy_prior, num_episodes, max_episode_length, \
+                            test_every, states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
+        V_gptd = gptd.get_value_function(states)
+        V_gptd = np.reshape(V_gptd, (numPointsx, numPointsx_dot))
+        print('Final mean error:%f'%np.mean(np.abs(V_target - V_gptd)))
+        test_error_ = np.concatenate((test_error_, np.array([np.mean(np.abs(V_gptd - V_target))])))
+        test_error[i,:] = test_error_
     set_trace()
     
     """
@@ -201,8 +206,17 @@ def main():
     run += 1
     saveDirectory = os.path.join(data_dir, resultDirName + str(run))
     os.mkdir(saveDirectory)
-    dl.dump_session(filename=os.path.join(saveDirectory, 'session_%d'%num_episodes))
+    set_trace()
+    with open(os.path.join(saveDirectory, 'session_%d.pkl'%num_episodes),'wb') as f_:
+        dl.dump((test_error), f_)
     plt.savefig(os.path.join(saveDirectory,'V_Diff.png'))
+    plt.show()
+
+    sns.tsplot(test_error)
+    plt.xlabel('Episodes x%d'%test_every)
+    plt.ylabel('Mean absolute error')
+    plt.title('GPTD')
+    plt.savefig(os.path.join(saveDirectory,'Learning_Trend.png'))
     plt.show()
     set_trace()
 

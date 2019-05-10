@@ -10,8 +10,10 @@ class GPTD:
         self.sigma0 = sigma0
         self.kernel = kernel.kernel
         if (not V_mu):
-            V_mu = lambda s: np.zeros((1,s.shape[1]))   
+            V_mu = lambda s: np.zeros((s.shape[1],1))   
         self.V_mu = V_mu
+        # self.V_mu_prior = lambda s: np.zeros((s.shape[1],1))
+        self.V_mu_prior = V_mu
         self.D = np.array([[]], dtype=np.float64, order='C')
         self.A = np.array([[]], dtype=np.float64, order='C')
         self.V_D = np.array([[]], dtype=np.float64, order='C')
@@ -35,8 +37,12 @@ class GPTD:
 
         for i in range(reward_sequence.shape[0]):
 
-            trajt_1 = state_sequence[:,i][:,np.newaxis]
-            trajt = state_sequence[:,i+1][:,np.newaxis]
+            # trajt_1 = state_sequence[:,i][:,np.newaxis]
+            # trajt = state_sequence[:,i+1][:,np.newaxis]
+            trajt_1 = np.concatenate((state_sequence[:,i][:,np.newaxis], \
+                                      self.V_mu(state_sequence[:,i][:,np.newaxis])), axis=0)
+            trajt = np.concatenate((state_sequence[:,i+1][:,np.newaxis], \
+                                      self.V_mu(state_sequence[:,i+1][:,np.newaxis])), axis=0)
             k_t_1 = self.kernel(self.D, trajt_1)
             k_t = self.kernel(self.D, trajt)
             ktt = self.kernel(trajt, trajt)
@@ -46,7 +52,8 @@ class GPTD:
 
             if (et - self.nu) > 10**(-4):
                 self.D = np.concatenate((self.D, trajt), axis=1)
-                self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1][:,np.newaxis])), axis=0)
+                # self.V_D = np.concatenate((self.V_D, self.V_mu(state_sequence[:,i+1][:,np.newaxis])), axis=0)
+                self.V_D = np.concatenate((self.V_D, self.V_mu_prior(state_sequence[:,i+1][:,np.newaxis])), axis=0)
 
                 at_by_et = at/et
                 self.K_inv = np.concatenate((self.K_inv + np.dot(at, at.T)/et, -at_by_et), axis=1)
@@ -85,12 +92,13 @@ class GPTD:
 
         self.diff_alpha_CV_D = self.alpha_ - np.dot(self.C_, self.V_D)
 
-    def build_posterior(self, policy, num_episodes, max_episode_length):
+    def build_posterior(self, policy, num_episodes, max_episode_length, test_every=np.inf, states_V_target=()):
         """
         policy is a function that take state as input and returns an action
         """
 
         statistics = trange(num_episodes)
+        test_error = np.array([])
 
         for e in statistics:
             is_terminal = False
@@ -115,9 +123,12 @@ class GPTD:
 
             if (self.D.shape[1]==0):
 
-                traj = state_sequence[:,0][:,np.newaxis]
+                # traj = state_sequence[:,0][:,np.newaxis]
+                traj = np.concatenate((state_sequence[:,0][:,np.newaxis],\
+                                       self.V_mu(state_sequence[:,0][:,np.newaxis])), axis=0)
                 self.D = traj
-                self.V_D = self.V_mu(state_sequence[:,0][:,np.newaxis])
+                # self.V_D = self.V_mu(state_sequence[:,0][:,np.newaxis])
+                self.V_D = self.V_mu_prior(state_sequence[:,0][:,np.newaxis])
                 self.K_inv = 1/self.kernel(traj, traj)
                 self.A = np.array([[1]], dtype=np.float64, order='C')
                 self.alpha_ = np.array([[0]], dtype=np.float64, order='C')
@@ -126,11 +137,19 @@ class GPTD:
 
             self.update(state_sequence, reward_sequence)
             statistics.set_postfix(epi_length=num_steps, dict_size=self.D.shape[1], cumm_cost=np.sum(reward_sequence))
+            if (e%test_every==0 and len(states_V_target)==2):
+                V = self.get_value_function(states_V_target[0])
+                test_error = np.concatenate((test_error, np.array([np.mean(np.abs(V - states_V_target[1]))])))
+
+        return test_error
 
     def get_value_function(self, states):
 
         if (self.D.shape[1]==0):
-            return self.V_mu(states) 
+            return self.V_mu(states)
+            # return self.V_mu_prior(states) 
 
         else:
-            return self.V_mu(states) + np.dot(self.kernel(self.D, states).T, self.diff_alpha_CV_D)
+            # return self.V_mu(states) + np.dot(self.kernel(self.D, states).T, self.diff_alpha_CV_D)
+            states_ = np.concatenate((states, self.V_mu(states).T), axis=0)
+            return self.V_mu_prior(states) + np.dot(self.kernel(self.D, states_).T, self.diff_alpha_CV_D)

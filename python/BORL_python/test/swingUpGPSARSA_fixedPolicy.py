@@ -2,13 +2,14 @@ import os
 import numpy as np
 import pickle as pkl
 import dill as dl
+import seaborn as sns
 import matplotlib.pyplot as plt
 from ipdb import set_trace
 from scipy.interpolate import RegularGridInterpolator
 from scipy.integrate import ode
 from BORL_python.env.pendulum import pendulum
 from BORL_python.value.ValueIteration import ValueIterationSwingUp
-from BORL_python.value.GPSARSA_fixedGrid import GPSARSA_fixedGrid
+from BORL_python.value.GPSARSA_fixedPolicy import GPSARSA_fixedPolicy
 from BORL_python.utils.kernels import SqExpArd
 from BORL_python.utils.functions import buildQfromV
 
@@ -18,12 +19,12 @@ def main():
     Initialize environments
     """
     m = 1
-    mass_factor = 2.1
+    mass_factor = 1.7
     l = 1
-    length_factor = 1.1
+    length_factor = 0.8
     b = 0.15
     g = 9.81
-    dt = 0.005
+    dt = 0.01
     goal = np.array([[np.pi],[0]])
     x_limits = np.array([0, 6.2832])
     numPointsx = 51
@@ -31,8 +32,8 @@ def main():
     x_dot_limits = np.array([-6.5, 6.5])
     numPointsx_dot = 81
     dx_dot = (x_dot_limits[-1] - x_dot_limits[0])/(numPointsx_dot - 1)
-    Q = np.array([[40, 0], [0, 0.02]])
-    R = 0.2
+    Q = np.array([[30, 0], [0, 1]])
+    R = 2.5
     test_policies = False
     environment = pendulum(m, l, b, g, dt, goal, x_limits, dx, x_dot_limits, dx_dot, Q, R)
     environment_target = pendulum(m*mass_factor, l*length_factor, b, g, dt, goal, x_limits, dx, x_dot_limits, dx_dot, Q, R)
@@ -43,7 +44,7 @@ def main():
     gamma = 0.99
     x_grid = np.linspace(x_limits[0], x_limits[1], numPointsx)
     x_dot_grid = np.linspace(x_dot_limits[0], x_dot_limits[1], numPointsx_dot)
-    u_limits = np.array([-15.0,15.0])
+    u_limits = np.array([-15,15])
     numPointsu = 121
     u_grid = np.linspace(u_limits[0], u_limits[1], numPointsu)
     num_iterations = 600
@@ -135,11 +136,14 @@ def main():
     GPSARSA
     """
     sigma0 = 0.2
-    sigmaf = 13.6596
-    sigmal = np.array([[0.5977],[1.9957],[5.7314]])
+    sigmaf = 20.8228
+    sigmal = np.array([[0.6694],[1.4959],[7.0752]])
+    # sigmaf = 16.8202
+    # sigmal = np.array([[1.3087],[2.9121],[9.6583],[7.0756]])
+    nu = (sigmaf**2)*(np.exp(-1)-0.31)
     epsilon = 0.1
     max_episode_length = 1000
-    num_episodes = 1000
+    num_episodes = 2000
 
     kernel = SqExpArd(sigmal, sigmaf)
     states = np.mgrid[x_grid[0]:(x_grid[-1]+dx):dx, x_dot_grid[0]:(x_dot_grid[-1] + dx_dot):dx_dot]
@@ -153,21 +157,29 @@ def main():
     policy_start_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_start)
     policy_prior = lambda s: policy_start_(s.T)[:,np.newaxis]
 
-    numElementsInD = 1500
-    D = (np.concatenate((x_limits[0] + np.random.rand(1,numElementsInD)*(x_limits[-1] - x_limits[0]),\
-                x_dot_limits[0] + np.random.rand(1,numElementsInD)*(x_dot_limits[-1] - x_dot_limits[0])), axis=0), \
-                u_limits[0] + np.random.rand(1,numElementsInD)*(u_limits[-1] - u_limits[0]))
-
-    # D = (D, policy_prior(D).T)
-    gpsarsa = GPSARSA_fixedGrid(environment_target, u_limits[np.newaxis,:], sigma0, gamma, epsilon, kernel, D, Q_mu_, policy_prior)
     print('GPSARSA.. ')
-    gpsarsa.build_policy_monte_carlo(num_episodes, max_episode_length)
-    V_gpsarsa = gpsarsa.get_value_function(states)
-    V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+    update_every = 200
+    num_runs = 1
+    test_value_error = np.empty((num_runs, int(num_episodes/update_every)+2))
+    test_pos_error = np.empty((num_runs, int(num_episodes/update_every)))
+    for i in range(num_runs):
+        # np.random.seed(i*20)
+        gpsarsa = GPSARSA_fixedPolicy(env=environment_target, u_limits=u_limits[np.newaxis,:], \
+                          nu=nu, sigma0=sigma0, gamma=gamma, epsilon=epsilon, kernel=kernel,\
+                          Q_mu=Q_mu_, simulation_policy=policy_prior)
+        test_value_error_, test_pos_error_ = gpsarsa.build_policy_monte_carlo(num_episodes=num_episodes, max_episode_length=max_episode_length, \
+                                                                             update_every=update_every, \
+                                                                             states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
+        V_gpsarsa = gpsarsa.get_value_function(states)
+        V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
+        test_value_error_ = np.concatenate((test_value_error_, np.array([np.mean(np.abs(V_gpsarsa - V_target))])))
+        test_value_error_ = np.concatenate((np.array([np.mean(np.abs(V_start - V_target))]), test_value_error_))
+        print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
+        test_value_error[i,:] = test_value_error_
+        test_pos_error[i,:] = test_pos_error_
     set_trace()
-    
+
     """
     Results
     """
@@ -194,8 +206,8 @@ def main():
     plt.ylim(x_dot_limits[0], x_dot_limits[1])
     plt.ylabel('theta-dot')
     plt.title('Dictionary Points')
-    
-    resultDirName = 'GPSARSA_fixedGrid_run'
+
+    resultDirName = 'GPSARSA_fixedPolicy_run'
     run = -1
     for root, dirs, files in os.walk(data_dir):
         for d in dirs:
@@ -206,9 +218,24 @@ def main():
     run += 1
     saveDirectory = os.path.join(data_dir, resultDirName + str(run))
     os.mkdir(saveDirectory)
-    dl.dump_session(filename=os.path.join(saveDirectory, 'session_%d'%num_episodes))
+    with open(os.path.join(saveDirectory, 'session_%d.pkl'%num_episodes),'wb') as f_:
+        dl.dump((test_value_error, test_pos_error, gpsarsa), f_)
     plt.savefig(os.path.join(saveDirectory,'V_Diff.png'))
-    plt.show()
+    # plt.show()
+    
+    sns.tsplot(test_value_error)
+    plt.xlabel('Episodes x%d'%update_every)
+    plt.ylabel('Mean absolute error')
+    plt.title('GPSARSA Grid')
+    plt.savefig(os.path.join(saveDirectory,'Learning_Trend_Value_wMean.png'))
+    # plt.show()
+    
+    sns.tsplot(test_pos_error)
+    plt.xlabel('Episodes x%d'%update_every)
+    plt.ylabel('Mean goal error')
+    plt.title('GPSARSA Grid')
+    plt.savefig(os.path.join(saveDirectory,'Learning_Trend_Pos_wMean.png'))
+    # plt.show()
     set_trace()
 
 if __name__=='__main__':

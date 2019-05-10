@@ -9,7 +9,7 @@ class GPTD_fixedGrid:
         self.sigma0 = sigma0
         self.kernel = kernel.kernel
         if (not V_mu):
-            V_mu = lambda s: np.zeros(s.shape[1])
+            V_mu = lambda s: np.zeros((s.shape[1],1))
         self.V_mu = V_mu
         self.V_D = self.V_mu(D)
         self.D = D
@@ -61,12 +61,13 @@ class GPTD_fixedGrid:
 
         self.diff_alpha_CV_D = self.alpha_ - np.dot(self.C_, self.V_D)
 
-    def build_posterior(self, policy, num_episodes, max_episode_length):
+    def build_posterior(self, policy, num_episodes, max_episode_length, test_every=np.inf, states_V_target=()):
         """
         policy is a function that take state as input and returns an action
         """
 
         statistics = trange(num_episodes)
+        test_error = np.array([])
 
         for e in statistics:
             is_terminal = False
@@ -102,7 +103,12 @@ class GPTD_fixedGrid:
 
             self.update(state_sequence, reward_sequence)
             statistics.set_postfix(epi_length=num_steps, dict_size=self.D.shape[1], cumm_cost=np.sum(reward_sequence))
+            if (e%test_every==0 and len(states_V_target)==2):
+                V = self.get_value_function(states_V_target[0])
+                test_error = np.concatenate((test_error, np.array([np.mean(np.abs(V - states_V_target[1]))])))
 
+        return test_error
+        
     def get_value_function(self, states):
 
         if (self.D.shape[1]==0):
