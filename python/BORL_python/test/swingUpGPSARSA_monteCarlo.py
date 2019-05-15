@@ -161,7 +161,7 @@ def main():
 
     print('GPSARSA.. ')
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    update_every = 5
+    update_every = 50
     num_elements_inD = 800
     num_runs = 1
     test_value_error = np.empty((num_runs, int(num_episodes/update_every)+2))
