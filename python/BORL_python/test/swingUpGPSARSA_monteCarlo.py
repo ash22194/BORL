@@ -136,11 +136,13 @@ def main():
     GPSARSA
     """
     sigma0 = 0.2
-    sigmaf = 20.8228
-    sigmal = np.array([[0.6694],[1.4959],[7.0752]])
+    sigmaf = 13.6596
+    sigmal = np.array([[0.5977],[1.9957],[5.7314]])
+    # sigmaf = 20.8228
+    # sigmal = np.array([[0.6694],[1.4959],[7.0752]])
     # sigmaf = 16.8202
     # sigmal = np.array([[1.3087],[2.9121],[9.6583],[7.0756]])
-    nu = (sigmaf**2)*(np.exp(-1)-0.31)
+    nu = (sigmaf**2)*(np.exp(-1)-0.36)
     epsilon = 0.1
     max_episode_length = 1000
     num_episodes = 2000
@@ -159,25 +161,32 @@ def main():
 
     print('GPSARSA.. ')
     print('Initial mean error:%f'%np.mean(np.abs(V_target - V_start)))
-    update_every = 10
-    num_elements_inD = 1500
+    update_every = 5
+    num_elements_inD = 800
     num_runs = 1
     test_value_error = np.empty((num_runs, int(num_episodes/update_every)+2))
+    test_value_var = np.empty((num_runs, int(num_episodes/update_every)+2))
     test_pos_error = np.empty((num_runs, int(num_episodes/update_every)))
     for i in range(num_runs):
         # np.random.seed(i*20)
         gpsarsa = GPSARSA_monteCarlo(env=environment_target, u_limits=u_limits[np.newaxis,:], \
                           nu=nu, sigma0=sigma0, gamma=gamma, epsilon=epsilon, kernel=kernel,\
                           sparseD_size = num_elements_inD, simulation_policy=policy_prior)
-        test_value_error_, test_pos_error_ = gpsarsa.build_policy_monte_carlo(num_episodes=num_episodes, max_episode_length=max_episode_length, \
-                                                                             update_every=update_every, \
-                                                                             states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
-        V_gpsarsa = gpsarsa.get_value_function(states)
+        test_value_error_, test_value_error_, test_pos_error_ = \
+                        gpsarsa.build_policy_monte_carlo(num_episodes=num_episodes, max_episode_length=max_episode_length, \
+                                                         update_every=update_every, \
+                                                         states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
+        V_gpsarsa, policy_gpsarsa = gpsarsa.get_value_function(states)
         V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))
         test_value_error_ = np.concatenate((test_value_error_, np.array([np.mean(np.abs(V_gpsarsa - V_target))])))
         test_value_error_ = np.concatenate((np.array([np.mean(np.abs(V_start - V_target))]), test_value_error_))
+        
+        _, V_gpsarsa_var = gpsarsa.get_Q(states, policy_gpsarsa)
+        test_value_var_ = np.concatenate((np.array([0]), test_value_var_))
+        test_value_var_ = np.concatenate((test_value_var_, np.array([np.mean(np.abs(V_gpsarsa_var))])))
         print('Final mean error:%f'%np.mean(np.abs(V_target - V_gpsarsa)))
         test_value_error[i,:] = test_value_error_
+        test_value_var[i,:] = test_value_var_
         test_pos_error[i,:] = test_pos_error_
     set_trace()
 
@@ -220,27 +229,30 @@ def main():
     saveDirectory = os.path.join(data_dir, resultDirName + str(run))
     os.mkdir(saveDirectory)
     with open(os.path.join(saveDirectory, 'session_%d.pkl'%num_episodes),'wb') as f_:
-        dl.dump((test_value_error, test_pos_error, gpsarsa), f_)
-        # pkl.dump((test_value_error, test_pos_error, gpsarsa), f_)
+        dl.dump((test_value_error, test_pos_error, gpsarsa), f_)  
     plt.savefig(os.path.join(saveDirectory,'V_Diff.png'))
-    # plt.show()
+    plt.show()
     
     set_trace()
     sns.tsplot(test_value_error)
-    # plt.plot(test_value_error)
     plt.xlabel('Episodes x%d'%update_every)
     plt.ylabel('Mean absolute error')
-    plt.title('GPSARSA Grid')
+    plt.title('GPSARSA Monte-Carlo')
     plt.savefig(os.path.join(saveDirectory,'Learning_Trend_Value_woMean.png'))
-    # plt.show()
+    plt.show()
+    
+    sns.tsplot(test_value_var)
+    plt.xlabel('Episodes x%d'%update_every)
+    plt.ylabel('Value variance')
+    plt.title('GPSARSA Monte-Carlo')
+    plt.savefig(os.path.join(saveDirectory,'Learning_Trend_ValueVariance_woMean.png'))
+    plt.show()
     
     sns.tsplot(test_pos_error)
-    # plt.plot(test_pos_error)
     plt.xlabel('Episodes x%d'%update_every)
     plt.ylabel('Mean goal error')
-    plt.title('GPSARSA Grid')
+    plt.title('GPSARSA Monte-Carlo')
     plt.savefig(os.path.join(saveDirectory,'Learning_Trend_Pos_woMean.png'))
-    # plt.show()
     set_trace()
 
 if __name__=='__main__':

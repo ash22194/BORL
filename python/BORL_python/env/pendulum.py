@@ -94,8 +94,8 @@ class pendulum:
         
         states[0, states[0,:] > self.x_limits[1]] -= self.x_limits[1]
         states[0, states[0,:] < self.x_limits[0]] += self.x_limits[1]
-        states[1, states[1,:] > self.x_dot_limits[1]] = self.x_dot_limits[1]
-        states[1, states[1,:] < self.x_dot_limits[0]] = self.x_dot_limits[0]
+        states[1, states[1,:] > (self.x_dot_limits[1]-0.001)] = self.x_dot_limits[1]
+        states[1, states[1,:] < (self.x_dot_limits[0]+0.001)] = self.x_dot_limits[0]
 
         actions = policy(states.T)[np.newaxis,:]
         assert states.shape[1]==actions.shape[1], "states.shape[1] != actions.shape[1]"

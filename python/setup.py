@@ -9,12 +9,17 @@ setup(
                 if package.startswith('BORL_python')],
     install_requires=[
         'gym>=0.9.6',
+        'GPy',
+        'numpy',
+        'scipy',
+        'cython',
         'pyqt5>=5.10.1',
 		'ipdb',
-		'matplotlib'
-        'tqdm'
-        'pickle'
-        'dill'
+        'seaborn',
+		'matplotlib',
+        'tqdm',
+        'pickle',
+        'dill',
     ],
     package_data={}
 )
