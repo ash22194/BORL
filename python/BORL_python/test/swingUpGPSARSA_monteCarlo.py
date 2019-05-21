@@ -92,7 +92,6 @@ def main():
     Test learned policies
     """
     if (test_policies):
-        
         policy_start_ = RegularGridInterpolator((x_grid, x_dot_grid), policy_start)
         dyn_start = lambda t,s: environment_target.dynamics_continuous(s, policy_start_)
         int_start = ode(dyn_start).set_integrator('vode', method='bdf', with_jacobian=False)
@@ -188,7 +187,6 @@ def main():
         test_value_error[i,:] = test_value_error_
         test_value_var[i,:] = test_value_var_
         test_pos_error[i,:] = test_pos_error_
-    set_trace()
 
     """
     Results
@@ -229,10 +227,10 @@ def main():
     saveDirectory = os.path.join(data_dir, resultDirName + str(run))
     os.mkdir(saveDirectory)
     with open(os.path.join(saveDirectory, 'session_%d.pkl'%num_episodes),'wb') as f_:
-        dl.dump((test_value_error, test_pos_error, gpsarsa), f_)  
+        dl.dump((test_value_error, test_pos_error, gpsarsa), f_)
     plt.savefig(os.path.join(saveDirectory,'V_Diff.png'))
     plt.show()
-    
+
     set_trace()
     sns.tsplot(test_value_error)
     plt.xlabel('Episodes x%d'%update_every)
@@ -240,14 +238,14 @@ def main():
     plt.title('GPSARSA Monte-Carlo')
     plt.savefig(os.path.join(saveDirectory,'Learning_Trend_Value_woMean.png'))
     plt.show()
-    
+
     sns.tsplot(test_value_var)
     plt.xlabel('Episodes x%d'%update_every)
     plt.ylabel('Value variance')
     plt.title('GPSARSA Monte-Carlo')
     plt.savefig(os.path.join(saveDirectory,'Learning_Trend_ValueVariance_woMean.png'))
     plt.show()
-    
+
     sns.tsplot(test_pos_error)
     plt.xlabel('Episodes x%d'%update_every)
     plt.ylabel('Mean goal error')

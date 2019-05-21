@@ -75,21 +75,28 @@ class GPSARSA_monteCarlo:
                             (self.actions[0,1] - self.actions[0,0])*np.random.rand(1,self.sparseD_size) + \
                              self.actions[0,0]), axis=0).T
 
-        self.model = GPy.core.SVGP(X=self.D.T, \
-                                   Y=self.Q_D, \
-                                   Z=Z, \
-                                   kernel=kernel,
-                                   likelihood=GPy.likelihoods.Gaussian(),
-                                   batchsize=400)
-        optimizer = climin.Adadelta(self.model.optimizer_array, self.model.stochastic_grad, step_rate=0.2, momentum=0.9)
-        for info in optimizer:
-            if (info['n_iter']>=1000):
-                break
+        # self.model = GPy.core.SVGP(X=self.D.T, \
+        #                            Y=self.Q_D, \
+        #                            Z=Z, \
+        #                            kernel=kernel,
+        #                            likelihood=GPy.likelihoods.Gaussian(),
+        #                            batchsize=400)
+        self.model = GPy.models.SparseGPRegression(X=self.D.T,
+                                                   Y=self.Q_D,
+                                                   kernel=kernel,
+                                                   num_inducing=1000)
+
+        # optimizer = climin.Adadelta(self.model.optimizer_array, self.model.stochastic_grad, step_rate=0.2, momentum=0.9)
+        # for info in optimizer:
+        #     if (info['n_iter']>=1000):
+        #         break
         # self.model = GPy.models.SparseGPRegression(X=np.concatenate((state_sequence, action_sequence), axis=0).T, \
         #                                            Y=value_sequence[:,np.newaxis], \
         #                                            Z=Z, \
         #                                            kernel=kernel)
-        # self.model.optimize('lbfgsb', max_iters=500)
+        print("optimizing model")
+        self.model.optimize(messages=True, ipython_notebook=False, max_iters=1000)
+
 
         self.policy = lambda s,e: self.select_action_fromD(s, mu_only=False, epsilon=e)[1]
 
