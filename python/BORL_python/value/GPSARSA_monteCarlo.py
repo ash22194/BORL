@@ -1,6 +1,6 @@
 import numpy as np 
 import GPy
-import climin
+# import climin
 from tqdm import trange
 from ipdb import set_trace
 
@@ -18,6 +18,8 @@ class GPSARSA_monteCarlo:
         if (not Q_mu):
             Q_mu = lambda s,a: np.zeros(s.shape[1])[:,np.newaxis]
         self.Q_mu = Q_mu
+        self.Q_D_mu = 0
+        self.Q_D_sigma = 1
         if (not explore_policy):
             explore_policy = lambda s: np.repeat(self.actions[:,0][:,np.newaxis], s.shape[1], axis=1) + \
                                      np.repeat((self.actions[:,-1] - self.actions[:,0])[:,np.newaxis], s.shape[1], axis=1)* \
@@ -81,8 +83,10 @@ class GPSARSA_monteCarlo:
         #                            kernel=kernel,
         #                            likelihood=GPy.likelihoods.Gaussian(),
         #                            batchsize=400)
+        self.Q_D_mu = np.mean(self.Q_D)
+        self.Q_D_sigma = np.std(self.Q_D)
         self.model = GPy.models.SparseGPRegression(X=self.D.T,
-                                                   Y=self.Q_D,
+                                                   Y=(self.Q_D - self.Q_D_mu)/self.Q_D_sigma,
                                                    kernel=kernel,
                                                    num_inducing=1000)
 
@@ -97,7 +101,6 @@ class GPSARSA_monteCarlo:
         print("optimizing model")
         self.model.optimize(messages=True, ipython_notebook=False, max_iters=1000)
 
-
         self.policy = lambda s,e: self.select_action_fromD(s, mu_only=False, epsilon=e)[1]
 
     def select_action_fromD(self, state, mu_only=False, epsilon=0):
@@ -110,7 +113,7 @@ class GPSARSA_monteCarlo:
 
         if(explore<epsilon):
             actions = self.exploration_policy(state)
-            Q_mus, Q_vars = self.get_Q(state, actions)
+            Q_mus, Q_sigma = self.get_Q(state, actions)
 
         else:
             num_actions_to_sample = 15
@@ -118,9 +121,9 @@ class GPSARSA_monteCarlo:
                       (np.random.rand(self.actions.shape[0], num_actions_to_sample) *\
                        np.repeat((self.actions[:,1] - self.actions[:,0])[:,np.newaxis], num_actions_to_sample, axis=1))
             states = np.repeat(state, num_actions_to_sample, axis=1)
-            Q_mus, Q_vars = self.get_Q(states, actions)
+            Q_mus, Q_sigma = self.get_Q(states, actions)
         
-        Q = Q_mus + mu_only*np.random.rand(Q_vars.shape[0], Q_vars.shape[1])*Q_vars
+        Q = Q_mus + mu_only*np.random.rand(Q_sigma.shape[0], Q_sigma.shape[1])*Q_sigma
         action = np.argmin(Q, axis=0)[0]
         Q = Q[action, 0]
         action = actions[:, action][:,np.newaxis]
@@ -215,13 +218,15 @@ class GPSARSA_monteCarlo:
     def get_Q(self, states, actions):
 
         if (not hasattr(self,'model')):
-            Q_mus = self.Q_mu(states, actions)
-            Q_vars = np.zeros(Q_mus.shape)
+            Q_mus = self.Q_D_mu + self.Q_D_sigma*self.Q_mu(states, actions)
+            Q_sigma = np.zeros(Q_mus.shape)
 
         else:
             Q_mus, Q_vars = self.model.predict(np.concatenate((states, actions), axis=0).T)
+            Q_mus = self.Q_D_mu + self.Q_D_sigma*Q_mus
+            Q_sigma = self.Q_D_sigma*np.sqrt(Q_vars)
 
-        return Q_mus, Q_vars         
+        return Q_mus, Q_sigma         
 
     def get_value_function(self, states):
         
