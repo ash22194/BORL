@@ -191,8 +191,8 @@ class GPSARSA_monteCarlo:
                     current_value_error = np.array([np.mean(np.abs(V - states_V_target[1]))])
                     test_value_error = np.concatenate((test_value_error, current_value_error))
                     
-                    _, V_var = self.get_Q(states_V_target[0], policy)
-                    current_value_var = np.array([np.mean(np.abs(V_var))])
+                    _, V_sigma = self.get_Q(states_V_target[0], policy)
+                    current_value_var = np.array([np.mean(np.abs(V_sigma))])
                     test_value_var = np.concatenate((test_value_var, current_value_var))
 
                 state_sequence = np.empty((state.shape[0], (max_episode_length+1)*(update_every+1)), dtype=np.float64, order='C')
