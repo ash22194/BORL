@@ -143,7 +143,8 @@ def main():
     # sigmal = np.array([[1.3087],[2.9121],[9.6583],[7.0756]])
     nu = (sigmaf**2)*(np.exp(-1)-0.36)
     epsilon = 0.1
-    max_episode_length = 1000
+    max_episode_length = 5000
+    update_length = 2000
     num_episodes = 2000
 
     kernel = SqExpArd(sigmal, sigmaf)
@@ -173,7 +174,7 @@ def main():
                           sparseD_size = num_elements_inD, simulation_policy=policy_prior)
         test_value_error_, test_value_error_, test_pos_error_ = \
                         gpsarsa.build_policy_monte_carlo(num_episodes=num_episodes, max_episode_length=max_episode_length, \
-                                                         update_every=update_every, \
+                                                         update_every=update_every, update_length=update_length, \
                                                          states_V_target=(states, np.reshape(V_target, (states.shape[1],1))))
         V_gpsarsa, policy_gpsarsa = gpsarsa.get_value_function(states)
         V_gpsarsa = np.reshape(V_gpsarsa, (numPointsx, numPointsx_dot))

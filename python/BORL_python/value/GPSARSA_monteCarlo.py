@@ -130,9 +130,12 @@ class GPSARSA_monteCarlo:
 
         return Q, action
 
-    def build_policy_monte_carlo(self, num_episodes, max_episode_length, update_every=1, states_V_target=()):
+    def build_policy_monte_carlo(self, num_episodes, max_episode_length, update_every=1, update_length=0, states_V_target=()):
         """
         """
+
+        if (update_length==0):
+            update_length = max_episode_length
 
         statistics = trange(num_episodes)
         test_value_error = np.array([])
@@ -155,17 +158,20 @@ class GPSARSA_monteCarlo:
         for e in statistics:
             is_terminal = False
             num_steps_epi = 0
+            num_steps_epi_ = 0
             reward_sequence = np.empty(max_episode_length, dtype=np.float64, order='C')
 
             while ((num_steps_epi < max_episode_length) and (not is_terminal)):
-                num_steps+=1
-                num_steps_epi+=1
+                
                 state, reward, is_terminal = self.env.step(action)
                 action = self.policy(state, self.epsilon)
-
-                state_sequence[:, num_steps] = state[:,0]
-                action_sequence[:, num_steps] = action[:,0]
-                reward_sequence[num_steps_epi-1] = reward
+                num_steps_epi_+=1
+                while(num_steps_epi<update_length):
+                    num_steps+=1
+                    num_steps_epi+=1
+                    state_sequence[:, num_steps] = state[:,0]
+                    action_sequence[:, num_steps] = action[:,0]
+                    reward_sequence[num_steps_epi-1] = reward
 
             reward_sequence = reward_sequence[0:num_steps_epi]
             reward_sequence = np.concatenate((reward_sequence, np.zeros(1)))
@@ -173,7 +179,7 @@ class GPSARSA_monteCarlo:
                     np.array([self.gamma**i for i in range(num_steps_epi+1)])*reward_sequence
             value_sequence[num_steps-num_steps_epi:num_steps+1] = self.get_Q(state, action)[0][0,0] +\
                     np.array([np.sum(discounted_reward_sequence[i:]) for i in range(num_steps_epi+1)])
-                
+            # print('Final cost : ', self.get_Q(state, action)[0][0,0])
             state = self.env.reset()
             action = self.policy(state, self.epsilon)
 
@@ -206,7 +212,7 @@ class GPSARSA_monteCarlo:
             state_sequence[:,num_steps] = state[:,0]
             action_sequence[:,num_steps] = action[:,0]
 
-            statistics.set_postfix(epi_length=num_steps_epi, \
+            statistics.set_postfix(epi_length=num_steps_epi_, \
                                    dict_size=self.sparseD_size, \
                                    cumm_cost=np.sum(reward_sequence), \
                                    v_err=current_value_error, \
