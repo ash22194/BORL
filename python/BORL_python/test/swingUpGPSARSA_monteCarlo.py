@@ -144,7 +144,7 @@ def main():
     nu = (sigmaf**2)*(np.exp(-1)-0.36)
     epsilon = 0.1
     max_episode_length = 5000
-    update_length = 2000
+    update_length = 1000
     num_episodes = 2000
 
     kernel = SqExpArd(sigmal, sigmaf)

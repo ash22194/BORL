@@ -161,7 +161,7 @@ class GPSARSA_monteCarlo:
             num_steps_epi_ = 0
             reward_sequence = np.empty(max_episode_length, dtype=np.float64, order='C')
 
-            while ((num_steps_epi < max_episode_length) and (not is_terminal)):
+            while ((num_steps_epi_ < max_episode_length) and (not is_terminal)):
                 
                 state, reward, is_terminal = self.env.step(action)
                 action = self.policy(state, self.epsilon)
